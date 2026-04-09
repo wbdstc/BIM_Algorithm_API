@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    "Inter",
+    "Segoe UI Variable",
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei UI",
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --app-bg: #020617;
+  --app-surface: rgba(15, 23, 42, 0.76);
+  --app-surface-soft: rgba(255, 255, 255, 0.045);
+  --app-text-primary: #e5eefb;
+  --app-text-secondary: #93a8c6;
+  --app-text-tertiary: #7f94b2;
+  --app-text-quaternary: #5e7290;
+  --app-accent: #38bdf8;
+  --app-accent-strong: #3b82f6;
+  --app-accent-violet: #7c3aed;
+  --app-warning: #fb923c;
+  --panel-shadow:
+    0 24px 60px rgba(2, 6, 23, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --panel-blur: 22px;
+
+  --el-color-primary: #3b82f6;
+  --el-color-primary-light-3: #60a5fa;
+  --el-color-primary-light-5: #93c5fd;
+  --el-color-primary-dark-2: #2563eb;
+  --el-bg-color: #0f172a;
+  --el-bg-color-page: #020617;
+  --el-fill-color-blank: rgba(15, 23, 42, 0.8);
+  --el-text-color-primary: #e5eefb;
+  --el-text-color-regular: #93a8c6;
+  --el-text-color-secondary: #7f94b2;
+  --el-border-color: rgba(148, 163, 184, 0.12);
+  --el-border-color-light: rgba(148, 163, 184, 0.08);
+  --el-mask-color: rgba(2, 6, 23, 0.7);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+html {
+  background: var(--app-bg);
+}
+
+body {
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 20%),
+    radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.12), transparent 18%),
+    var(--app-bg);
+  color: var(--app-text-primary);
+}
+
+body::-webkit-scrollbar {
+  width: 10px;
+}
+
+body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.28);
+  color: white;
+}
