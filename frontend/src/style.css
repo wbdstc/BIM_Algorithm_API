@@ -1,9 +1,9 @@
 :root {
   color-scheme: dark;
   font-family:
-    "Inter",
+    "HarmonyOS Sans SC",
+    "Alibaba PuHuiTi 3.0",
     "Segoe UI Variable",
-    "Segoe UI",
     "PingFang SC",
     "Microsoft YaHei UI",
     sans-serif;
@@ -13,32 +13,31 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --app-bg: #020617;
-  --app-surface: rgba(15, 23, 42, 0.76);
+  --app-bg: #06101a;
+  --app-surface: rgba(8, 18, 28, 0.82);
   --app-surface-soft: rgba(255, 255, 255, 0.045);
-  --app-text-primary: #e5eefb;
-  --app-text-secondary: #93a8c6;
-  --app-text-tertiary: #7f94b2;
-  --app-text-quaternary: #5e7290;
+  --app-text-primary: #edf6ff;
+  --app-text-secondary: #9bb2c9;
+  --app-text-tertiary: #7892aa;
+  --app-text-quaternary: #5c758b;
   --app-accent: #38bdf8;
-  --app-accent-strong: #3b82f6;
-  --app-accent-violet: #7c3aed;
-  --app-warning: #fb923c;
+  --app-accent-strong: #0ea5e9;
+  --app-warning: #f59e0b;
   --panel-shadow:
-    0 24px 60px rgba(2, 6, 23, 0.38),
+    0 24px 60px rgba(2, 6, 23, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --panel-blur: 22px;
 
-  --el-color-primary: #3b82f6;
-  --el-color-primary-light-3: #60a5fa;
-  --el-color-primary-light-5: #93c5fd;
-  --el-color-primary-dark-2: #2563eb;
-  --el-bg-color: #0f172a;
-  --el-bg-color-page: #020617;
-  --el-fill-color-blank: rgba(15, 23, 42, 0.8);
-  --el-text-color-primary: #e5eefb;
-  --el-text-color-regular: #93a8c6;
-  --el-text-color-secondary: #7f94b2;
+  --el-color-primary: #0ea5e9;
+  --el-color-primary-light-3: #38bdf8;
+  --el-color-primary-light-5: #7dd3fc;
+  --el-color-primary-dark-2: #0284c7;
+  --el-bg-color: #0a1520;
+  --el-bg-color-page: #06101a;
+  --el-fill-color-blank: rgba(8, 18, 28, 0.84);
+  --el-text-color-primary: #edf6ff;
+  --el-text-color-regular: #9bb2c9;
+  --el-text-color-secondary: #7892aa;
   --el-border-color: rgba(148, 163, 184, 0.12);
   --el-border-color-light: rgba(148, 163, 184, 0.08);
   --el-mask-color: rgba(2, 6, 23, 0.7);
@@ -53,6 +52,7 @@ body,
 #app {
   margin: 0;
   min-height: 100%;
+  height: 100%;
 }
 
 html {
@@ -61,10 +61,14 @@ html {
 
 body {
   min-width: 320px;
+  overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 20%),
-    radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.12), transparent 18%),
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.14), transparent 20%),
+    radial-gradient(circle at 88% 16%, rgba(245, 158, 11, 0.08), transparent 16%),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
     var(--app-bg);
+  background-size: auto, auto, 28px 28px, 28px 28px, auto;
   color: var(--app-text-primary);
 }
 
@@ -89,6 +93,6 @@ select {
 }
 
 ::selection {
-  background: rgba(59, 130, 246, 0.28);
+  background: rgba(14, 165, 233, 0.32);
   color: white;
 }

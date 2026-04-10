@@ -11,7 +11,7 @@ import type {
   SiteBoundary,
 } from "../types/layout";
 
-const colorPalette = ["#38BDF8", "#8B5CF6", "#F59E0B", "#10B981", "#F97316", "#EF4444"];
+const colorPalette = ["#38BDF8", "#14B8A6", "#F59E0B", "#10B981", "#F97316", "#EF4444"];
 
 const roadOffset = 1500;
 const roadThickness = 180;
@@ -159,7 +159,7 @@ const createSnapshotOptimizationResult = (): OptimizationResult => {
         z: 0,
         length: item.l,
         width: item.w,
-        height: item.material_name.includes("妯℃澘") ? 20 : 30,
+        height: item.material_name.includes("模板") ? 20 : 30,
         display_color: colorPalette[index % colorPalette.length],
         assigned_crane_id: assignedCrane?.id ?? null,
         assigned_crane_name: assignedCrane?.name ?? item.nearest_crane,

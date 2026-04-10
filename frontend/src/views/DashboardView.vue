@@ -1,192 +1,25 @@
 <template>
   <div class="dashboard-shell">
-    <aside class="sidebar-shell">
-      <div class="sidebar-header">
-        <p class="sidebar-kicker">BIM SMART SITE / AI LAYOUT</p>
-        <h1>BIM 智慧工地 AI 场布</h1>
-        <p class="sidebar-summary">
-          录入场地边界和物料参数，执行 AI 场布寻优，并在右侧画布中查看坐标落位与塔吊覆盖关系。
-        </p>
-
-        <div class="sidebar-stats">
-          <div class="stat-chip">
-            <span>塔吊</span>
-            <strong>{{ workingCranes.length }}</strong>
-          </div>
-          <div class="stat-chip">
-            <span>障碍物</span>
-            <strong>{{ obstacles.length }}</strong>
-          </div>
-          <div class="stat-chip">
-            <span>物料</span>
-            <strong>{{ materials.length }}</strong>
-          </div>
-        </div>
+    <header class="dashboard-toolbar">
+      <div class="toolbar-brand">
+        <p class="toolbar-kicker">BIM SMART SITE</p>
+        <h1>{{ projectName }}</h1>
+        <p class="toolbar-copy">{{ toolbarCopy }}</p>
       </div>
 
-      <section class="sidebar-section">
-        <div class="section-head">
-          <div>
-            <p class="section-eyebrow">Site Envelope</p>
-            <h2>场地边界</h2>
-          </div>
-          <span class="section-unit">单位：m</span>
-        </div>
+      <div class="toolbar-stats">
+        <article
+          v-for="metric in toolbarStats"
+          :key="metric.label"
+          class="toolbar-stat"
+        >
+          <span>{{ metric.label }}</span>
+          <strong>{{ metric.value }}</strong>
+        </article>
+      </div>
 
-        <div class="boundary-grid">
-          <label class="field-card">
-            <span>Min X</span>
-            <el-input-number
-              v-model="siteBoundary.min_x"
-              :step="1"
-              :controls="false"
-              class="ghost-number"
-            />
-          </label>
-          <label class="field-card">
-            <span>Max X</span>
-            <el-input-number
-              v-model="siteBoundary.max_x"
-              :step="1"
-              :controls="false"
-              class="ghost-number"
-            />
-          </label>
-          <label class="field-card">
-            <span>Min Y</span>
-            <el-input-number
-              v-model="siteBoundary.min_y"
-              :step="1"
-              :controls="false"
-              class="ghost-number"
-            />
-          </label>
-          <label class="field-card">
-            <span>Max Y</span>
-            <el-input-number
-              v-model="siteBoundary.max_y"
-              :step="1"
-              :controls="false"
-              class="ghost-number"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section class="sidebar-section">
-        <div class="section-head section-head--stack">
-          <div>
-            <p class="section-eyebrow">Material Setup</p>
-            <h2>物料输入表单</h2>
-          </div>
-          <el-button class="utility-button" @click="layoutStore.addMaterial">新增物料</el-button>
-        </div>
-
-        <div class="material-list">
-          <article v-for="material in materials" :key="material.id" class="material-card">
-            <div class="material-card__head">
-              <div class="material-meta">
-                <div
-                  class="color-badge"
-                  :style="{ background: material.display_color || '#38bdf8' }"
-                />
-                <el-input
-                  v-model="material.name"
-                  placeholder="输入物料名称"
-                  class="ghost-input"
-                />
-              </div>
-              <el-button
-                text
-                class="danger-button"
-                @click="layoutStore.removeMaterial(material.id)"
-              >
-                删除
-              </el-button>
-            </div>
-
-            <div class="dimension-grid">
-              <label class="metric-card">
-                <span>长度</span>
-                <el-input-number
-                  v-model="material.length"
-                  :min="1"
-                  :step="0.5"
-                  :controls="false"
-                  class="ghost-number"
-                />
-                <small>m</small>
-              </label>
-              <label class="metric-card">
-                <span>宽度</span>
-                <el-input-number
-                  v-model="material.width"
-                  :min="1"
-                  :step="0.5"
-                  :controls="false"
-                  class="ghost-number"
-                />
-                <small>m</small>
-              </label>
-              <label class="metric-card">
-                <span>高度</span>
-                <el-input-number
-                  v-model="material.height"
-                  :min="1"
-                  :step="0.5"
-                  :controls="false"
-                  class="ghost-number"
-                />
-                <small>m</small>
-              </label>
-              <label class="metric-card">
-                <span>重量</span>
-                <el-input-number
-                  v-model="material.weight_tons"
-                  :min="0.5"
-                  :step="0.5"
-                  :controls="false"
-                  class="ghost-number"
-                />
-                <small>t</small>
-              </label>
-            </div>
-
-            <div class="material-extra">
-              <label class="field-card">
-                <span>搬运频次</span>
-                <el-input-number
-                  v-model="material.handling_frequency"
-                  :min="0.2"
-                  :step="0.1"
-                  :controls="false"
-                  class="ghost-number"
-                />
-              </label>
-              <label class="field-card">
-                <span>物料类别</span>
-                <el-input
-                  v-model="material.category"
-                  placeholder="steel / formwork / prefab"
-                  class="ghost-input"
-                />
-              </label>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="sidebar-section sidebar-section--accent">
-        <div class="section-head section-head--vertical">
-          <div>
-            <p class="section-eyebrow">Optimization Engine</p>
-            <h2>执行 AI 场布寻优</h2>
-          </div>
-          <p class="section-copy">
-            提交参数后，遗传算法会完成坐标选址、可行性判断与塔吊智能分配。
-          </p>
-        </div>
-
+      <div class="toolbar-actions">
+        <span :class="['status-pill', reportToneClass]">{{ reportTitle }}</span>
         <el-button
           type="primary"
           size="large"
@@ -194,97 +27,462 @@
           :loading="loading"
           @click="layoutStore.optimizeLayout"
         >
-          执行 AI 场布寻优
+          {{ optimizationResult ? "重新计算方案" : "开始计算方案" }}
         </el-button>
+      </div>
+    </header>
 
-        <p v-if="error" class="error-text">{{ error }}</p>
-      </section>
-
-      <section class="sidebar-section">
-        <div class="section-head">
+    <div class="workspace-grid">
+      <aside class="panel panel--materials">
+        <div class="panel-head">
           <div>
-            <p class="section-eyebrow">Execution Report</p>
-            <h2>优化执行报告</h2>
+            <p class="panel-kicker">Materials</p>
+            <h2>物料清单</h2>
           </div>
-          <strong class="report-state">{{ reportTitle }}</strong>
+
+          <el-button class="utility-button" @click="layoutStore.addMaterial">
+            新增物料
+          </el-button>
         </div>
 
-        <el-empty v-if="!optimizationResult" description="等待执行优化" />
+        <div class="panel-summary">
+          <article class="summary-pill">
+            <span>物料</span>
+            <strong>{{ materials.length }} 项</strong>
+          </article>
+          <article class="summary-pill">
+            <span>总重量</span>
+            <strong>{{ formatMetric(totalWeight, 1) }} t</strong>
+          </article>
+          <article class="summary-pill">
+            <span>高频搬运</span>
+            <strong>{{ highFrequencyCount }} 项</strong>
+          </article>
+        </div>
 
-        <template v-else>
-          <div class="report-kpis">
-            <div class="report-kpi">
-              <span>总成本</span>
-              <strong>{{ optimizationResult.metrics.total_cost.toFixed(2) }}</strong>
-            </div>
-            <div class="report-kpi">
-              <span>成功布置</span>
-              <strong>{{ optimizationResult.metrics.placed_count }}</strong>
-            </div>
-            <div class="report-kpi">
-              <span>不可达</span>
-              <strong>{{ optimizationResult.metrics.unplaced_count }}</strong>
-            </div>
-          </div>
-
-          <div class="report-list">
+        <div class="panel-body">
+          <div class="material-list">
             <article
-              v-for="placement in optimizationResult.placements"
-              :key="placement.material_id"
-              class="report-item"
+              v-for="material in materials"
+              :key="material.id"
+              :class="[
+                'material-item',
+                { 'material-item--active': expandedMaterialId === material.id },
+              ]"
             >
-              <div class="report-item__head">
-                <div class="report-item__name">
-                  <div
-                    class="color-badge"
-                    :style="{ background: placement.display_color || '#38bdf8' }"
+              <button
+                type="button"
+                class="material-row"
+                @click="toggleMaterial(material.id, material.name)"
+              >
+                <div class="material-main">
+                  <span
+                    class="material-dot"
+                    :style="{ background: material.display_color || '#38bdf8' }"
                   />
-                  <strong>{{ placement.material_name }}</strong>
+                  <div class="material-copy">
+                    <strong>{{ material.name }}</strong>
+                    <p>{{ material.category || "未分类" }}</p>
+                  </div>
                 </div>
-                <span class="report-badge">{{ placement.status }}</span>
-              </div>
-              <p>
-                坐标 ({{ placement.x }}, {{ placement.y }}) · 塔吊
-                {{ placement.assigned_crane_name || "未分配" }}
-              </p>
-              <p>搬运成本 {{ placement.transport_cost ?? "--" }}</p>
+
+                <div class="material-meta">
+                  <span>{{ formatMetric(material.weight_tons, 1) }} t</span>
+                  <span>{{ formatMetric(material.handling_frequency, 1) }} 次</span>
+                </div>
+              </button>
+
+              <Transition name="expand">
+                <div
+                  v-if="expandedMaterialId === material.id"
+                  class="material-editor"
+                >
+                  <div class="material-editor__actions">
+                    <el-button
+                      v-if="hasPlacement(material.name)"
+                      text
+                      class="utility-button utility-button--inline"
+                      @click.stop="focusPlacement(material.name)"
+                    >
+                      定位结果
+                    </el-button>
+                    <el-button
+                      text
+                      class="danger-button"
+                      @click.stop="layoutStore.removeMaterial(material.id)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
+
+                  <div class="field-grid">
+                    <label class="field-card">
+                      <span>物料名称</span>
+                      <el-input
+                        v-model="material.name"
+                        placeholder="输入物料名称"
+                        class="ghost-input"
+                      />
+                    </label>
+                    <label class="field-card">
+                      <span>物料类别</span>
+                      <el-input
+                        v-model="material.category"
+                        placeholder="steel / formwork / prefab"
+                        class="ghost-input"
+                      />
+                    </label>
+                    <label class="field-card">
+                      <span>长度</span>
+                      <el-input-number
+                        v-model="material.length"
+                        :min="1"
+                        :step="0.5"
+                        :controls="false"
+                        class="ghost-number"
+                      />
+                    </label>
+                    <label class="field-card">
+                      <span>宽度</span>
+                      <el-input-number
+                        v-model="material.width"
+                        :min="1"
+                        :step="0.5"
+                        :controls="false"
+                        class="ghost-number"
+                      />
+                    </label>
+                    <label class="field-card">
+                      <span>高度</span>
+                      <el-input-number
+                        v-model="material.height"
+                        :min="1"
+                        :step="0.5"
+                        :controls="false"
+                        class="ghost-number"
+                      />
+                    </label>
+                    <label class="field-card">
+                      <span>重量</span>
+                      <el-input-number
+                        v-model="material.weight_tons"
+                        :min="0.5"
+                        :step="0.5"
+                        :controls="false"
+                        class="ghost-number"
+                      />
+                    </label>
+                    <label class="field-card field-card--full">
+                      <span>搬运频次</span>
+                      <el-input-number
+                        v-model="material.handling_frequency"
+                        :min="0.2"
+                        :step="0.1"
+                        :controls="false"
+                        class="ghost-number"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </Transition>
             </article>
           </div>
+        </div>
 
-          <div v-if="optimizationResult.metrics.warnings.length" class="warning-box">
-            <h3>告警信息</h3>
-            <p v-for="warning in optimizationResult.metrics.warnings" :key="warning">
-              {{ warning }}
-            </p>
+        <p v-if="error" class="panel-error">{{ error }}</p>
+      </aside>
+
+      <main class="panel panel--canvas">
+        <CanvasMap :highlight-placement-name="activePlacementName" />
+      </main>
+
+      <aside class="panel panel--review">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Review</p>
+            <h2>落位结果</h2>
           </div>
-        </template>
-      </section>
-    </aside>
 
-    <main class="workspace-panel">
-      <CanvasMap />
-    </main>
+          <div class="review-tabs">
+            <button
+              type="button"
+              :class="['tab-button', { 'tab-button--active': reviewTab === 'placements' }]"
+              @click="reviewTab = 'placements'"
+            >
+              落位
+            </button>
+            <button
+              type="button"
+              :class="['tab-button', { 'tab-button--active': reviewTab === 'warnings' }]"
+              @click="reviewTab = 'warnings'"
+            >
+              告警
+            </button>
+          </div>
+        </div>
+
+        <div class="review-summary">
+          <article class="summary-card summary-card--primary">
+            <span>落位率</span>
+            <strong>{{ optimizationResult ? `${placementRate}%` : "--" }}</strong>
+            <p>{{ placedCount }} / {{ materials.length }} 已落位</p>
+          </article>
+          <article class="summary-card">
+            <span>总成本</span>
+            <strong>{{ optimizationResult ? formatMetric(optimizationResult.metrics.total_cost, 2) : "--" }}</strong>
+          </article>
+          <article class="summary-card">
+            <span>告警</span>
+            <strong>{{ warningCount }} 条</strong>
+          </article>
+        </div>
+
+        <div class="panel-body">
+          <template v-if="optimizationResult">
+            <div v-if="reviewTab === 'placements'" class="placement-list">
+              <button
+                v-for="placement in sortedPlacements"
+                :key="placement.material_id"
+                type="button"
+                :class="[
+                  'placement-item',
+                  { 'placement-item--active': activePlacementName === placement.material_name },
+                ]"
+                @click="selectPlacement(placement.material_name)"
+              >
+                <div class="placement-item__head">
+                  <div class="placement-name">
+                    <span
+                      class="material-dot"
+                      :style="{ background: placement.display_color || '#38bdf8' }"
+                    />
+                    <strong>{{ placement.material_name }}</strong>
+                  </div>
+                  <span :class="['item-state', placementTone(placement)]">
+                    {{ placementStatusLabel(placement) }}
+                  </span>
+                </div>
+                <p>{{ coordinateLabel(placement) }}</p>
+                <p>{{ placement.assigned_crane_name || "未分配塔吊" }}</p>
+              </button>
+            </div>
+
+            <div v-else class="warning-list">
+              <article
+                v-if="optimizationResult.metrics.warnings.length === 0"
+                class="warning-item warning-item--empty"
+              >
+                当前没有系统告警，可重点检查坐标和塔吊覆盖是否符合现场习惯。
+              </article>
+              <article
+                v-for="warning in optimizationResult.metrics.warnings"
+                :key="warning"
+                class="warning-item"
+              >
+                {{ warning }}
+              </article>
+            </div>
+          </template>
+
+          <el-empty
+            v-else
+            description="执行寻优后，这里会展示落位结果并支持地图联动。"
+          />
+        </div>
+      </aside>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 
 import CanvasMap from "../components/CanvasMap.vue";
+import type { PlacementResult } from "../types/layout";
 import { useLayoutStore } from "../stores/layout";
 
+type ReviewTab = "placements" | "warnings";
+
 const layoutStore = useLayoutStore();
-const { error, loading, materials, obstacles, optimizationResult, siteBoundary, workingCranes } =
+const { error, loading, materials, obstacles, optimizationResult, projectName, workingCranes } =
   storeToRefs(layoutStore);
 
+const expandedMaterialId = ref("");
+const activePlacementName = ref<string | null>(null);
+const reviewTab = ref<ReviewTab>("placements");
+
+const formatMetric = (value: number, digits = 0) =>
+  new Intl.NumberFormat("zh-CN", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits > 0 ? Math.min(digits, 1) : 0,
+  }).format(value);
+
+const totalWeight = computed(() =>
+  materials.value.reduce((sum, item) => sum + item.weight_tons, 0),
+);
+
+const highFrequencyCount = computed(() =>
+  materials.value.filter((item) => item.handling_frequency >= 1).length,
+);
+
+const placedCount = computed(() => optimizationResult.value?.metrics.placed_count ?? 0);
+
+const warningCount = computed(() => optimizationResult.value?.metrics.warnings.length ?? 0);
+
+const placementRate = computed(() => {
+  if (!materials.value.length) {
+    return 0;
+  }
+
+  return Math.round((placedCount.value / materials.value.length) * 100);
+});
+
 const reportTitle = computed(() => {
+  if (loading.value) {
+    return "计算中";
+  }
+
   if (!optimizationResult.value) {
     return "待执行";
   }
 
-  return optimizationResult.value.metrics.feasible_layout ? "方案可落地" : "需人工复核";
+  if (!optimizationResult.value.metrics.feasible_layout) {
+    return "需复核";
+  }
+
+  if (warningCount.value) {
+    return "有告警";
+  }
+
+  return "可落地";
 });
+
+const reportToneClass = computed(() => {
+  if (loading.value) {
+    return "status-pill--running";
+  }
+
+  if (!optimizationResult.value) {
+    return "status-pill--idle";
+  }
+
+  return reportTitle.value === "可落地"
+    ? "status-pill--success"
+    : "status-pill--warning";
+});
+
+const toolbarCopy = computed(() =>
+  optimizationResult.value
+    ? "左侧维护物料，右侧逐项复核落位，地图只保留必要标注。"
+    : "先整理左侧物料参数，再生成场布方案。",
+);
+
+const toolbarStats = computed(() => [
+  { label: "塔吊", value: `${workingCranes.value.length} 台` },
+  { label: "障碍物", value: `${obstacles.value.length} 项` },
+  { label: "物料", value: `${materials.value.length} 项` },
+]);
+
+const sortedPlacements = computed(() => {
+  const placements = optimizationResult.value?.placements ?? [];
+  const rank = (placement: PlacementResult) =>
+    placement.status !== "placed" || placement.path_crosses_obstacle ? 1 : 0;
+
+  return [...placements].sort((left, right) => {
+    const diff = rank(left) - rank(right);
+    if (diff !== 0) {
+      return diff;
+    }
+
+    return left.material_name.localeCompare(right.material_name, "zh-CN");
+  });
+});
+
+const placementMap = computed(
+  () => new Map(sortedPlacements.value.map((placement) => [placement.material_name, placement])),
+);
+
+const hasPlacement = (materialName: string) => placementMap.value.has(materialName);
+
+const focusPlacement = (materialName: string) => {
+  if (!placementMap.value.has(materialName)) {
+    return;
+  }
+
+  activePlacementName.value = materialName;
+  reviewTab.value = "placements";
+};
+
+const toggleMaterial = (materialId: string, materialName: string) => {
+  expandedMaterialId.value = expandedMaterialId.value === materialId ? "" : materialId;
+  if (placementMap.value.has(materialName)) {
+    activePlacementName.value = materialName;
+  }
+};
+
+const selectPlacement = (materialName: string) => {
+  activePlacementName.value = activePlacementName.value === materialName ? null : materialName;
+};
+
+const coordinateLabel = (placement: PlacementResult) =>
+  `坐标 ${formatMetric(placement.x)} / ${formatMetric(placement.y)}`;
+
+const placementStatusLabel = (placement: PlacementResult) => {
+  if (placement.status !== "placed") {
+    return "待处理";
+  }
+
+  if (placement.path_crosses_obstacle) {
+    return "路径受阻";
+  }
+
+  return "已落位";
+};
+
+const placementTone = (placement: PlacementResult) => {
+  if (placement.status !== "placed") {
+    return "item-state--muted";
+  }
+
+  return placement.path_crosses_obstacle ? "item-state--warning" : "item-state--success";
+};
+
+watch(
+  materials,
+  (items) => {
+    if (!items.length) {
+      expandedMaterialId.value = "";
+      return;
+    }
+
+    if (!items.some((item) => item.id === expandedMaterialId.value)) {
+      expandedMaterialId.value = items[0].id;
+    }
+  },
+  { immediate: true, deep: true },
+);
+
+watch(
+  sortedPlacements,
+  (placements) => {
+    if (!placements.length) {
+      activePlacementName.value = null;
+      return;
+    }
+
+    if (
+      activePlacementName.value
+      && placements.some((placement) => placement.material_name === activePlacementName.value)
+    ) {
+      return;
+    }
+
+    activePlacementName.value = placements[0].material_name;
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
   void layoutStore.loadProjectSnapshot();
 });
@@ -292,230 +490,243 @@ onMounted(() => {
 
 <style scoped>
 .dashboard-shell {
-  display: grid;
-  grid-template-columns: 400px minmax(0, 1fr);
-  gap: 20px;
-  min-height: 100vh;
-  padding: 20px;
-  background:
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 20%),
-    radial-gradient(circle at 12% 40%, rgba(124, 58, 237, 0.1), transparent 18%),
-    linear-gradient(160deg, #020617 0%, #081120 40%, #0f172a 100%);
-}
-
-.sidebar-shell {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: calc(100vh - 40px);
-  overflow: auto;
-  padding: 18px;
-  border-radius: 28px;
-  background: rgba(9, 15, 28, 0.78);
+  gap: 14px;
+  height: 100svh;
+  overflow: hidden;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 0 0, rgba(14, 165, 233, 0.14), transparent 22%),
+    linear-gradient(180deg, #06101a 0%, #081521 52%, #0b1824 100%);
+}
+
+.dashboard-toolbar,
+.panel {
+  border: 1px solid rgba(146, 181, 205, 0.12);
+  border-radius: 24px;
+  background: rgba(8, 18, 28, 0.82);
   box-shadow: var(--panel-shadow);
   backdrop-filter: blur(var(--panel-blur));
   -webkit-backdrop-filter: blur(var(--panel-blur));
 }
 
-.sidebar-shell::-webkit-scrollbar {
-  width: 8px;
+.dashboard-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
 }
 
-.sidebar-shell::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.2);
-}
-
-.sidebar-header {
-  padding: 8px 6px 20px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-}
-
-.sidebar-kicker,
-.section-eyebrow,
-.section-unit,
-.report-badge {
+.toolbar-kicker,
+.panel-kicker {
+  margin: 0 0 6px;
+  color: #7dd3fc;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
-.sidebar-kicker,
-.section-eyebrow {
-  margin: 0 0 10px;
-  color: #7dd3fc;
-}
-
-.sidebar-header h1,
-.section-head h2 {
+.toolbar-brand h1,
+.panel-head h2 {
   margin: 0;
   color: var(--app-text-primary);
   letter-spacing: -0.03em;
 }
 
-.sidebar-header h1 {
-  font-size: clamp(2rem, 3vw, 2.7rem);
-  line-height: 1.04;
+.toolbar-brand h1 {
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
 }
 
-.sidebar-summary,
-.section-copy,
-.report-item p {
+.toolbar-copy,
+.summary-card p,
+.material-copy p,
+.placement-item p,
+.warning-item {
   margin: 0;
   color: var(--app-text-secondary);
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
-.sidebar-summary {
-  margin-top: 12px;
-  max-width: 34ch;
-}
-
-.sidebar-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.toolbar-stats,
+.panel-summary {
+  display: flex;
   gap: 10px;
-  margin-top: 18px;
 }
 
-.stat-chip {
-  padding: 12px 14px;
+.toolbar-stat,
+.summary-pill,
+.summary-card,
+.material-item,
+.placement-item,
+.warning-item,
+.field-card {
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.045);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.stat-chip span,
-.field-card span,
-.metric-card span,
-.report-kpi span {
+.toolbar-stat,
+.summary-pill {
+  min-width: 86px;
+  padding: 10px 12px;
+}
+
+.toolbar-stat span,
+.summary-pill span,
+.summary-card span,
+.field-card span {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: var(--app-text-tertiary);
   font-size: 12px;
 }
 
-.stat-chip strong,
-.report-kpi strong {
-  font-size: 1.4rem;
-  line-height: 1;
+.toolbar-stat strong,
+.summary-pill strong,
+.summary-card strong {
+  color: var(--app-text-primary);
+  font-size: 1.05rem;
 }
 
-.sidebar-section {
-  padding: 18px 6px 20px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-}
-
-.sidebar-section:last-child {
-  border-bottom: 0;
-  padding-bottom: 6px;
-}
-
-.sidebar-section--accent {
-  padding: 18px;
-  border-radius: 22px;
-  border-bottom: 0;
-  background:
-    linear-gradient(135deg, rgba(56, 189, 248, 0.08), transparent 42%),
-    rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.section-head,
-.material-card__head,
-.report-item__head,
-.report-item__name,
-.material-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-head,
-.material-card__head,
-.report-item__head {
-  justify-content: space-between;
-}
-
-.section-head--stack {
-  align-items: flex-start;
-}
-
-.section-head--vertical {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.section-unit {
-  color: var(--app-text-tertiary);
-}
-
-.boundary-grid,
-.material-extra {
+.toolbar-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.boundary-grid {
-  margin-top: 16px;
+.status-pill,
+.item-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.field-card,
-.metric-card,
-.material-card,
-.report-item,
-.report-kpi {
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+.status-pill--idle {
+  background: rgba(56, 189, 248, 0.12);
+  color: #bae6fd;
 }
 
-.field-card,
-.metric-card {
-  padding: 12px;
+.status-pill--running {
+  background: rgba(14, 165, 233, 0.14);
+  color: #e0f2fe;
+}
+
+.status-pill--success,
+.item-state--success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+
+.status-pill--warning,
+.item-state--warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fde68a;
+}
+
+.item-state--muted {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+}
+
+.workspace-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  gap: 14px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid rgba(146, 181, 205, 0.1);
+}
+
+.panel-summary {
+  padding: 12px 16px 0;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px 16px;
+}
+
+.panel-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
 }
 
 .material-list,
-.report-list {
+.placement-list,
+.warning-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.material-list {
-  margin-top: 16px;
-}
-
-.material-card {
-  padding: 14px;
-}
-
-.material-meta {
-  min-width: 0;
-  flex: 1;
-}
-
-.dimension-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 12px;
 }
 
-.metric-card small {
+.material-item {
+  overflow: hidden;
+  border: 1px solid transparent;
+}
+
+.material-item--active {
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.material-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.material-main,
+.placement-item__head,
+.placement-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.material-copy strong,
+.placement-name strong {
   display: block;
-  margin-top: 6px;
-  color: var(--app-text-quaternary);
-  font-size: 11px;
+  color: var(--app-text-primary);
 }
 
-.material-extra {
-  margin-top: 10px;
-}
-
-.color-badge {
+.material-dot {
   width: 12px;
   height: 12px;
   border-radius: 999px;
@@ -523,108 +734,144 @@ onMounted(() => {
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
 }
 
-.cta-button {
-  width: 100%;
-  margin-top: 16px;
-}
-
-.section-copy {
-  max-width: 34ch;
-}
-
-.error-text {
-  margin: 10px 0 0;
-  color: #fda4af;
-}
-
-.report-state {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(56, 189, 248, 0.08);
-  color: #dbeafe;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.report-kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.material-meta {
+  display: flex;
   gap: 10px;
-  margin: 16px 0 14px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
 }
 
-.report-kpi,
-.report-item {
+.material-editor {
+  padding: 0 14px 14px;
+}
+
+.material-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.field-card {
+  padding: 12px;
+}
+
+.field-card--full {
+  grid-column: 1 / -1;
+}
+
+.panel--canvas {
+  padding: 8px;
+}
+
+.panel--canvas :deep(.map-shell) {
+  flex: 1;
+  min-height: 0;
+}
+
+.review-tabs {
+  display: inline-flex;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tab-button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab-button--active {
+  background: rgba(56, 189, 248, 0.14);
+  color: #e0f2fe;
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 16px 0;
+}
+
+.summary-card {
   padding: 14px;
 }
 
-.report-item__name strong {
-  font-size: 14px;
+.summary-card--primary {
+  grid-column: 1 / -1;
 }
 
-.report-item p + p {
-  margin-top: 6px;
+.summary-card--primary strong {
+  font-size: 1.7rem;
 }
 
-.report-badge {
-  color: #a5b4fc;
-}
-
-.warning-box {
-  margin-top: 12px;
+.placement-item {
+  width: 100%;
+  display: grid;
+  gap: 8px;
   padding: 14px;
-  border-radius: 18px;
-  background: rgba(251, 146, 60, 0.1);
-  color: #fdba74;
+  border: 1px solid transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.warning-box h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
+.placement-item--active {
+  border-color: rgba(56, 189, 248, 0.24);
+  background: rgba(56, 189, 248, 0.08);
 }
 
-.warning-box p {
+.placement-item p {
+  font-size: 12px;
+}
+
+.warning-item {
+  padding: 14px;
+}
+
+.warning-item--empty {
+  color: var(--app-text-secondary);
+}
+
+.panel-error {
   margin: 0;
-}
-
-.warning-box p + p {
-  margin-top: 6px;
-}
-
-.workspace-panel {
-  min-width: 0;
+  padding: 0 16px 14px;
+  color: #fda4af;
 }
 
 :deep(.ghost-input .el-input__wrapper),
 :deep(.ghost-number.el-input-number),
 :deep(.ghost-number .el-input__wrapper) {
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
   box-shadow: none;
-  transition:
-    background 200ms ease,
-    box-shadow 200ms ease;
 }
 
 :deep(.ghost-number.el-input-number) {
   width: 100%;
 }
 
-:deep(.ghost-input .el-input__wrapper:hover),
-:deep(.ghost-number .el-input__wrapper:hover),
-:deep(.ghost-number.el-input-number:hover) {
-  background: rgba(255, 255, 255, 0.065);
-}
-
 :deep(.ghost-input .el-input__wrapper.is-focus),
 :deep(.ghost-number .el-input__wrapper.is-focus),
 :deep(.ghost-number.el-input-number:focus-within) {
-  background: rgba(15, 23, 42, 0.88);
+  background: rgba(8, 18, 28, 0.98);
   box-shadow:
-    0 0 0 1px rgba(96, 165, 250, 0.6),
-    0 0 0 5px rgba(59, 130, 246, 0.1);
+    0 0 0 1px rgba(56, 189, 248, 0.6),
+    0 0 0 5px rgba(56, 189, 248, 0.08);
 }
 
 :deep(.ghost-input .el-input__inner),
@@ -632,24 +879,17 @@ onMounted(() => {
   color: var(--app-text-primary);
 }
 
-:deep(.ghost-input .el-input__inner::placeholder),
-:deep(.ghost-number .el-input__inner::placeholder) {
-  color: var(--app-text-quaternary);
-}
-
 :deep(.utility-button.el-button),
 :deep(.danger-button.el-button) {
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--app-text-primary);
   box-shadow: none;
 }
 
-:deep(.utility-button.el-button:hover),
-:deep(.danger-button.el-button:hover) {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
+:deep(.utility-button--inline.el-button) {
+  color: #bae6fd;
 }
 
 :deep(.danger-button.el-button) {
@@ -657,94 +897,83 @@ onMounted(() => {
 }
 
 :deep(.cta-button.el-button) {
-  position: relative;
-  overflow: hidden;
+  width: 100%;
   border: 0;
   border-radius: 16px;
-  color: white;
-  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 50%, #7c3aed 100%);
+  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 60%, #0284c7 100%);
   box-shadow:
-    0 18px 36px rgba(37, 99, 235, 0.28),
-    0 0 28px rgba(59, 130, 246, 0.16);
-  transition:
-    transform 220ms ease,
-    box-shadow 220ms ease;
-}
-
-:deep(.cta-button.el-button::after) {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: 15px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent 40%);
-}
-
-:deep(.cta-button.el-button > span) {
-  position: relative;
-  z-index: 1;
-}
-
-:deep(.cta-button.el-button:hover) {
-  transform: translateY(-1px);
-  box-shadow:
-    0 22px 44px rgba(76, 29, 149, 0.28),
-    0 0 32px rgba(56, 189, 248, 0.2);
+    0 16px 32px rgba(14, 165, 233, 0.24),
+    0 0 24px rgba(56, 189, 248, 0.12);
 }
 
 :deep(.el-empty) {
-  padding-block: 24px 18px;
+  padding-block: 40px 16px;
 }
 
-:deep(.el-empty__description p) {
-  color: var(--app-text-secondary);
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 180ms ease;
 }
 
-@media (max-width: 1260px) {
-  .dashboard-shell {
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (max-width: 1380px) {
+  .dashboard-toolbar {
     grid-template-columns: 1fr;
   }
 
-  .sidebar-shell {
-    max-height: none;
+  .toolbar-stats {
+    flex-wrap: wrap;
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1220px) {
+  .workspace-grid {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .panel--review {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
   .dashboard-shell {
-    padding: 14px;
+    height: auto;
+    min-height: 100svh;
+    overflow: visible;
   }
 
-  .sidebar-stats,
-  .report-kpis,
-  .boundary-grid,
-  .material-extra,
-  .dimension-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .section-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
-
-@media (max-width: 640px) {
-  .sidebar-stats,
-  .report-kpis,
-  .boundary-grid,
-  .material-extra,
-  .dimension-grid {
+  .workspace-grid {
     grid-template-columns: 1fr;
   }
 
-  .material-card__head,
-  .report-item__head {
-    align-items: flex-start;
-    flex-direction: column;
+  .panel {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-shell {
+    padding: 12px;
   }
 
-  .material-meta {
-    width: 100%;
+  .toolbar-stats,
+  .panel-summary,
+  .review-summary,
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .panel-head,
+  .material-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>
