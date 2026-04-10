@@ -63,6 +63,13 @@ const realSiteBoundary: SiteBoundary = {
 
 const defaultSceneGuides: SceneGuides = {
   wall_envelope: wallEnvelope,
+  wall_boundary_path: [
+    { x: wallEnvelope.min_x, y: wallEnvelope.min_y + 1200 },
+    { x: wallEnvelope.min_x + 900, y: wallEnvelope.min_y },
+    { x: wallEnvelope.max_x, y: wallEnvelope.min_y },
+    { x: wallEnvelope.max_x, y: wallEnvelope.max_y },
+    { x: wallEnvelope.min_x, y: wallEnvelope.max_y },
+  ],
   building_envelopes: {
     building_1: building1Envelope,
     building_2: building2Envelope,
@@ -149,8 +156,10 @@ const createSnapshotOptimizationResult = (): OptimizationResult => {
         material_name: item.material_name,
         x: item.optimal_x,
         y: item.optimal_y,
+        z: 0,
         length: item.l,
         width: item.w,
+        height: item.material_name.includes("妯℃澘") ? 20 : 30,
         display_color: colorPalette[index % colorPalette.length],
         assigned_crane_id: assignedCrane?.id ?? null,
         assigned_crane_name: assignedCrane?.name ?? item.nearest_crane,

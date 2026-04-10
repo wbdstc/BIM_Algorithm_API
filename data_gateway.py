@@ -150,6 +150,47 @@ def envelope_from_metrics(metrics_list, origin_x, origin_y):
     }
 
 
+def relative_corners_from_metrics(metrics, origin_x, origin_y):
+    return [
+        {"x": metrics["min_x"] - origin_x, "y": metrics["min_y"] - origin_y},
+        {"x": metrics["max_x"] - origin_x, "y": metrics["min_y"] - origin_y},
+        {"x": metrics["max_x"] - origin_x, "y": metrics["max_y"] - origin_y},
+        {"x": metrics["min_x"] - origin_x, "y": metrics["max_y"] - origin_y},
+    ]
+
+
+def convex_hull(points):
+    unique_points = sorted(
+        {
+            (round(point["x"], 6), round(point["y"], 6))
+            for point in points
+        }
+    )
+    if len(unique_points) <= 1:
+        return [{"x": x, "y": y} for x, y in unique_points]
+
+    def cross(origin, left, right):
+        return (
+            (left[0] - origin[0]) * (right[1] - origin[1])
+            - (left[1] - origin[1]) * (right[0] - origin[0])
+        )
+
+    lower = []
+    for point in unique_points:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+
+    upper = []
+    for point in reversed(unique_points):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0:
+            upper.pop()
+        upper.append(point)
+
+    hull = lower[:-1] + upper[:-1]
+    return [{"x": x, "y": y} for x, y in hull]
+
+
 def create_relative_obstacle(metrics, origin_x, origin_y, *, obstacle_id, name, kind, group_key=None):
     obstacle = {
         "id": obstacle_id,
@@ -195,6 +236,7 @@ if __name__ == "__main__":
         "materials": [],
         "scene_guides": {
             "wall_envelope": None,
+            "wall_boundary_path": [],
             "building_envelopes": {},
             "recommended_road_offset": 1500,
         },
@@ -286,12 +328,14 @@ if __name__ == "__main__":
         )
 
     wall_metrics = []
+    wall_boundary_points = []
     for index, element_id in enumerate(ROLE_MAP_IDS["wall_segments"], start=1):
         metrics = fetch_metrics(token, element_id)
         if not metrics:
             continue
 
         wall_metrics.append(metrics)
+        wall_boundary_points.extend(relative_corners_from_metrics(metrics, origin_x, origin_y))
         payload_for_ga["obstacles"].append(
             create_relative_obstacle(
                 metrics,
@@ -325,6 +369,7 @@ if __name__ == "__main__":
         origin_x,
         origin_y,
     )
+    payload_for_ga["scene_guides"]["wall_boundary_path"] = convex_hull(wall_boundary_points)
 
     print(json.dumps(payload_for_ga, indent=4, ensure_ascii=False))
 

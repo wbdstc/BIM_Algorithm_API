@@ -20,8 +20,14 @@ class EnvelopeGuide(BaseModel):
     height: float | None = None
 
 
+class BoundaryPoint(BaseModel):
+    x: float
+    y: float
+
+
 class SceneGuides(BaseModel):
     wall_envelope: EnvelopeGuide | None = None
+    wall_boundary_path: list[BoundaryPoint] = Field(default_factory=list)
     building_envelopes: dict[str, EnvelopeGuide] = Field(default_factory=dict)
     recommended_road_offset: float | None = Field(default=None, ge=0)
 
@@ -91,8 +97,10 @@ class PlacementResult(BaseModel):
     material_name: str
     x: float
     y: float
+    z: float = 0.0
     length: float
     width: float
+    height: float = Field(ge=0)
     display_color: str | None = None
     assigned_crane_id: str | None = None
     assigned_crane_name: str | None = None

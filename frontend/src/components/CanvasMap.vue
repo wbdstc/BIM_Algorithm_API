@@ -21,7 +21,7 @@
 
     <div class="legend">
       <div><i class="legend-boundary" /> 场地边界线</div>
-      <div><i class="legend-road" /> 参数化主路</div>
+      <div><i class="legend-road" /> 主路骨架</div>
       <div><i class="legend-obstacle" /> 实体障碍</div>
       <div><i class="legend-crane" /> 塔吊</div>
       <div><i class="legend-material" /> AI 寻优结果</div>
@@ -33,14 +33,15 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 
-import type { EnvelopeGuide, ObstacleModel, SiteBoundary } from "../types/layout";
+import type { BoundaryPoint, EnvelopeGuide, ObstacleModel, SiteBoundary } from "../types/layout";
 import { useLayoutStore } from "../stores/layout";
 import { createCoordinateTransform } from "../utils/coordinateTransform";
 import {
-  envelopeHeight,
-  envelopeWidth,
+  envelopeFromPoints,
   expandEnvelope,
   getPrimaryBuildingEnvelope,
+  getRoadPathGuide,
+  getWallBoundaryPath,
   getWallEnvelope,
 } from "../utils/siteVisuals";
 
@@ -58,15 +59,24 @@ let dashPhase = 0;
 const isSolidObstacle = (obstacle: ObstacleModel) =>
   obstacle.kind !== "road" && obstacle.kind !== "wall" && obstacle.kind !== "crane";
 
+const visualBoundaryPath = computed(() =>
+  getWallBoundaryPath(sceneGuides.value, siteBoundary.value, obstacles.value),
+);
+
 const visualBoundary = computed(() =>
-  getWallEnvelope(sceneGuides.value, siteBoundary.value, obstacles.value),
+  envelopeFromPoints(visualBoundaryPath.value)
+  ?? getWallEnvelope(sceneGuides.value, siteBoundary.value, obstacles.value),
 );
 
 const primaryBuildingEnvelope = computed(() =>
   getPrimaryBuildingEnvelope(sceneGuides.value, obstacles.value),
 );
 
-const roadLoopEnvelope = computed(() => {
+const roadPathGuide = computed(() =>
+  getRoadPathGuide(sceneGuides.value, siteBoundary.value, obstacles.value),
+);
+
+const fallbackRoadEnvelope = computed(() => {
   if (!primaryBuildingEnvelope.value) {
     return null;
   }
@@ -105,28 +115,6 @@ const drawStar = (
       ctx.lineTo(pointX, pointY);
     }
   }
-  ctx.closePath();
-};
-
-const traceRoundedRect = (
-  ctx: CanvasRenderingContext2D,
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-  radius: number,
-) => {
-  const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
-  ctx.beginPath();
-  ctx.moveTo(left + safeRadius, top);
-  ctx.lineTo(left + width - safeRadius, top);
-  ctx.arcTo(left + width, top, left + width, top + safeRadius, safeRadius);
-  ctx.lineTo(left + width, top + height - safeRadius);
-  ctx.arcTo(left + width, top + height, left + width - safeRadius, top + height, safeRadius);
-  ctx.lineTo(left + safeRadius, top + height);
-  ctx.arcTo(left, top + height, left, top + height - safeRadius, safeRadius);
-  ctx.lineTo(left, top + safeRadius);
-  ctx.arcTo(left, top, left + safeRadius, top, safeRadius);
   ctx.closePath();
 };
 
@@ -212,54 +200,78 @@ const drawOriginAxes = (
 const drawBoundaryLoop = (
   ctx: CanvasRenderingContext2D,
   transform: ReturnType<typeof createCoordinateTransform>,
-  envelope: EnvelopeGuide,
+  boundaryPath: BoundaryPoint[],
 ) => {
-  const rect = transform.toScreenRect(
-    (envelope.min_x + envelope.max_x) / 2,
-    (envelope.min_y + envelope.max_y) / 2,
-    envelopeWidth(envelope),
-    envelopeHeight(envelope),
-  );
+  if (boundaryPath.length < 3) {
+    return;
+  }
 
+  const screenPoints = boundaryPath.map((point) => transform.toScreenPoint(point.x, point.y));
+
+  ctx.beginPath();
+  ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+  screenPoints.slice(1).forEach((point) => {
+    ctx.lineTo(point.x, point.y);
+  });
+  ctx.closePath();
   ctx.fillStyle = "rgba(255, 255, 255, 0.025)";
-  ctx.fillRect(rect.left, rect.top, rect.width, rect.height);
+  ctx.fill();
 
   ctx.save();
   ctx.setLineDash([18, 10]);
   ctx.lineDashOffset = -dashPhase * 0.45;
   ctx.strokeStyle = "rgba(125, 211, 252, 0.96)";
   ctx.lineWidth = 2.2;
-  ctx.strokeRect(rect.left, rect.top, rect.width, rect.height);
+  ctx.beginPath();
+  ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+  screenPoints.slice(1).forEach((point) => {
+    ctx.lineTo(point.x, point.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
   ctx.restore();
 };
 
 const drawRoadLoop = (
   ctx: CanvasRenderingContext2D,
   transform: ReturnType<typeof createCoordinateTransform>,
-  envelope: EnvelopeGuide,
+  path: BoundaryPoint[],
+  roadWidthWorld: number,
+  closed: boolean,
 ) => {
-  const rect = transform.toScreenRect(
-    (envelope.min_x + envelope.max_x) / 2,
-    (envelope.min_y + envelope.max_y) / 2,
-    envelopeWidth(envelope),
-    envelopeHeight(envelope),
-  );
-  const radius = Math.max(18, Math.min(40, Math.min(rect.width, rect.height) * 0.08));
-  const roadWidth = Math.max(10, Math.min(24, transform.scale * 220));
+  if (path.length < 2) {
+    return;
+  }
+
+  const screenPoints = path.map((point) => transform.toScreenPoint(point.x, point.y));
+  const roadWidth = Math.max(10, Math.min(24, transform.scale * roadWidthWorld));
+
+  const drawPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+    screenPoints.slice(1).forEach((point) => {
+      ctx.lineTo(point.x, point.y);
+    });
+    if (closed) {
+      ctx.closePath();
+    }
+  };
 
   ctx.save();
   ctx.shadowColor = "rgba(245, 158, 11, 0.34)";
   ctx.shadowBlur = 18;
-  traceRoundedRect(ctx, rect.left, rect.top, rect.width, rect.height, radius);
+  drawPath();
   ctx.strokeStyle = "rgba(245, 158, 11, 0.22)";
   ctx.lineWidth = roadWidth + 10;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.stroke();
   ctx.restore();
 
   ctx.save();
   ctx.setLineDash([22, 10]);
   ctx.lineDashOffset = -dashPhase;
-  traceRoundedRect(ctx, rect.left, rect.top, rect.width, rect.height, radius);
+  drawPath();
   ctx.strokeStyle = "rgba(251, 191, 36, 0.88)";
   ctx.lineWidth = roadWidth;
   ctx.lineCap = "round";
@@ -267,9 +279,10 @@ const drawRoadLoop = (
   ctx.stroke();
   ctx.restore();
 
+  const labelPoint = screenPoints[Math.floor(screenPoints.length / 2)];
   ctx.fillStyle = "rgba(254, 240, 138, 0.88)";
   ctx.font = "600 12px 'Microsoft YaHei UI', sans-serif";
-  ctx.fillText("参数化环形主路", rect.left + 12, rect.top - 10);
+  ctx.fillText("Main road", labelPoint.x + 12, labelPoint.y - 10);
 };
 
 const render = () => {
@@ -323,9 +336,28 @@ const render = () => {
     ctx.stroke();
   }
 
-  drawBoundaryLoop(ctx, transform, visualBoundary.value);
-  if (roadLoopEnvelope.value) {
-    drawRoadLoop(ctx, transform, roadLoopEnvelope.value);
+  drawBoundaryLoop(ctx, transform, visualBoundaryPath.value);
+  if (roadPathGuide.value) {
+    drawRoadLoop(
+      ctx,
+      transform,
+      roadPathGuide.value.path,
+      roadPathGuide.value.width,
+      roadPathGuide.value.closed,
+    );
+  } else if (fallbackRoadEnvelope.value) {
+    drawRoadLoop(
+      ctx,
+      transform,
+      [
+        { x: fallbackRoadEnvelope.value.min_x, y: fallbackRoadEnvelope.value.min_y },
+        { x: fallbackRoadEnvelope.value.max_x, y: fallbackRoadEnvelope.value.min_y },
+        { x: fallbackRoadEnvelope.value.max_x, y: fallbackRoadEnvelope.value.max_y },
+        { x: fallbackRoadEnvelope.value.min_x, y: fallbackRoadEnvelope.value.max_y },
+      ],
+      220,
+      true,
+    );
   }
 
   drawOriginAxes(ctx, transform);
@@ -375,6 +407,9 @@ const render = () => {
     ctx.fillStyle = "#f8fafc";
     ctx.font = "13px 'Microsoft YaHei UI', sans-serif";
     ctx.fillText(placement.material_name, rect.left + 8, rect.top + 20);
+    ctx.fillStyle = "rgba(191, 219, 254, 0.88)";
+    ctx.font = "11px 'Microsoft YaHei UI', sans-serif";
+    ctx.fillText(`Z ${placement.z.toFixed(1)}m / H ${placement.height.toFixed(1)}m`, rect.left + 8, rect.top + 36);
 
     const assignedCrane = placement.assigned_crane_id
       ? craneMap.get(placement.assigned_crane_id)

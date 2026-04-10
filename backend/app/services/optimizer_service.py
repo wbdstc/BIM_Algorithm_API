@@ -10,11 +10,13 @@ from .. import models, schemas
 
 
 @dataclass(frozen=True)
-class Rect:
+class Box3D:
     min_x: float
     max_x: float
     min_y: float
     max_y: float
+    min_z: float
+    max_z: float
 
 
 @dataclass(frozen=True)
@@ -180,14 +182,13 @@ class LayoutOptimizerService:
         payload: schemas.OptimizeProjectRequest,
     ) -> schemas.OptimizeProjectResponse:
         rng = random.Random(payload.random_seed if payload.random_seed is not None else self.seed)
-        obstacle_rects = [
-            self._rect_from_center(
-                obstacle.x,
-                obstacle.y,
-                obstacle.length,
-                obstacle.width,
-                payload.clearance,
-            )
+        site_polygon = (
+            payload.scene_guides.wall_boundary_path
+            if payload.scene_guides and len(payload.scene_guides.wall_boundary_path) >= 3
+            else None
+        )
+        obstacle_boxes = [
+            self._box_from_obstacle(obstacle, payload.clearance)
             for obstacle in payload.obstacles
         ]
 
@@ -196,7 +197,8 @@ class LayoutOptimizerService:
                 rng=rng,
                 materials=payload.materials,
                 boundary=payload.site_boundary,
-                obstacle_rects=obstacle_rects,
+                site_polygon=site_polygon,
+                obstacle_boxes=obstacle_boxes,
                 clearance=payload.clearance,
             )
             for _ in range(payload.population_size)
@@ -215,7 +217,8 @@ class LayoutOptimizerService:
                     materials=payload.materials,
                     cranes=payload.working_cranes,
                     boundary=payload.site_boundary,
-                    obstacle_rects=obstacle_rects,
+                    site_polygon=site_polygon,
+                    obstacle_boxes=obstacle_boxes,
                     clearance=payload.clearance,
                     crane_path_penalty=payload.crane_path_penalty,
                 )
@@ -257,7 +260,8 @@ class LayoutOptimizerService:
                 materials=payload.materials,
                 cranes=payload.working_cranes,
                 boundary=payload.site_boundary,
-                obstacle_rects=obstacle_rects,
+                site_polygon=site_polygon,
+                obstacle_boxes=obstacle_boxes,
                 clearance=payload.clearance,
                 crane_path_penalty=payload.crane_path_penalty,
             )
@@ -289,30 +293,24 @@ class LayoutOptimizerService:
         rng: random.Random,
         materials: list[schemas.MaterialInput],
         boundary: schemas.SiteBoundary,
-        obstacle_rects: list[Rect],
+        site_polygon: list[schemas.BoundaryPoint] | None,
+        obstacle_boxes: list[Box3D],
         clearance: float,
     ) -> list[tuple[float, float]]:
         solution: list[tuple[float, float]] = []
-        occupied: list[Rect] = []
+        occupied: list[Box3D] = []
         for material in materials:
             position = self._find_feasible_position(
                 rng=rng,
                 material=material,
                 boundary=boundary,
-                obstacle_rects=obstacle_rects,
-                occupied_rects=occupied,
+                site_polygon=site_polygon,
+                obstacle_boxes=obstacle_boxes,
+                occupied_boxes=occupied,
                 clearance=clearance,
             )
             solution.append(position)
-            occupied.append(
-                self._rect_from_center(
-                    position[0],
-                    position[1],
-                    material.length,
-                    material.width,
-                    clearance,
-                )
-            )
+            occupied.append(self._material_box_from_center(position[0], position[1], material, clearance))
         return solution
 
     def _find_feasible_position(
@@ -320,13 +318,22 @@ class LayoutOptimizerService:
         rng: random.Random,
         material: schemas.MaterialInput,
         boundary: schemas.SiteBoundary,
-        obstacle_rects: list[Rect],
-        occupied_rects: list[Rect],
+        site_polygon: list[schemas.BoundaryPoint] | None,
+        obstacle_boxes: list[Box3D],
+        occupied_boxes: list[Box3D],
         clearance: float,
     ) -> tuple[float, float]:
         for _ in range(90):
             candidate = self._random_position(rng, material, boundary, clearance)
-            if self._is_slot_feasible(candidate, material, boundary, obstacle_rects, occupied_rects, clearance):
+            if self._is_slot_feasible(
+                candidate,
+                material,
+                boundary,
+                site_polygon,
+                obstacle_boxes,
+                occupied_boxes,
+                clearance,
+            ):
                 return candidate
 
         scan_steps = 10
@@ -340,7 +347,15 @@ class LayoutOptimizerService:
                     boundary.min_y + (row * step_y),
                 )
                 candidate = self._clamp_to_boundary(candidate, material, boundary, clearance)
-                if self._is_slot_feasible(candidate, material, boundary, obstacle_rects, occupied_rects, clearance):
+                if self._is_slot_feasible(
+                    candidate,
+                    material,
+                    boundary,
+                    site_polygon,
+                    obstacle_boxes,
+                    occupied_boxes,
+                    clearance,
+                ):
                     return candidate
 
         center = ((boundary.min_x + boundary.max_x) / 2, (boundary.min_y + boundary.max_y) / 2)
@@ -351,16 +366,17 @@ class LayoutOptimizerService:
         candidate: tuple[float, float],
         material: schemas.MaterialInput,
         boundary: schemas.SiteBoundary,
-        obstacle_rects: list[Rect],
-        occupied_rects: list[Rect],
+        site_polygon: list[schemas.BoundaryPoint] | None,
+        obstacle_boxes: list[Box3D],
+        occupied_boxes: list[Box3D],
         clearance: float,
     ) -> bool:
-        rect = self._rect_from_center(candidate[0], candidate[1], material.length, material.width, clearance)
-        if not self._rect_inside_boundary(rect, boundary):
+        box = self._material_box_from_center(candidate[0], candidate[1], material, clearance)
+        if not self._box_inside_boundary(box, boundary, site_polygon):
             return False
-        if any(self._rects_overlap(rect, obstacle) for obstacle in obstacle_rects):
+        if any(self._boxes_overlap(box, obstacle) for obstacle in obstacle_boxes):
             return False
-        if any(self._rects_overlap(rect, item) for item in occupied_rects):
+        if any(self._boxes_overlap(box, item) for item in occupied_boxes):
             return False
         return True
 
@@ -370,39 +386,43 @@ class LayoutOptimizerService:
         materials: list[schemas.MaterialInput],
         cranes: list[schemas.CraneInput],
         boundary: schemas.SiteBoundary,
-        obstacle_rects: list[Rect],
+        site_polygon: list[schemas.BoundaryPoint] | None,
+        obstacle_boxes: list[Box3D],
         clearance: float,
         crane_path_penalty: float,
     ) -> dict:
         placements: list[dict] = []
         warnings: list[str] = []
-        occupied: list[Rect] = []
+        occupied: list[Box3D] = []
         total_cost = 0.0
         penalty = 0.0
         placed_count = 0
 
         for position, material in zip(solution, materials):
             x, y = self._clamp_to_boundary(position, material, boundary, clearance)
-            rect = self._rect_from_center(x, y, material.length, material.width, clearance)
+            z = 0.0
+            box = self._material_box_from_center(x, y, material, clearance)
             local_penalty = 0.0
 
-            if not self._rect_inside_boundary(rect, boundary):
+            if not self._box_inside_boundary(box, boundary, site_polygon):
                 local_penalty += 100000.0
                 warnings.append(f"{material.name} exceeds site boundary.")
-            if any(self._rects_overlap(rect, obstacle) for obstacle in obstacle_rects):
+            if any(self._boxes_overlap(box, obstacle) for obstacle in obstacle_boxes):
                 local_penalty += 120000.0
-                warnings.append(f"{material.name} collides with an obstacle.")
-            if any(self._rects_overlap(rect, existing) for existing in occupied):
+                warnings.append(f"{material.name} collides with an obstacle in 3D space.")
+            if any(self._boxes_overlap(box, existing) for existing in occupied):
                 local_penalty += 150000.0
-                warnings.append(f"{material.name} overlaps another material stack.")
+                warnings.append(f"{material.name} overlaps another material stack in 3D space.")
 
             crane_choice = self._select_best_crane(
                 material=material,
                 x=x,
                 y=y,
+                z=z,
                 cranes=cranes,
-                obstacle_rects=obstacle_rects,
+                obstacle_boxes=obstacle_boxes,
                 crane_path_penalty=crane_path_penalty,
+                clearance=clearance,
             )
 
             if crane_choice is None:
@@ -413,8 +433,10 @@ class LayoutOptimizerService:
                     "material_name": material.name,
                     "x": round(x, 3),
                     "y": round(y, 3),
+                    "z": round(z, 3),
                     "length": material.length,
                     "width": material.width,
+                    "height": material.height,
                     "display_color": material.display_color,
                     "assigned_crane_id": None,
                     "assigned_crane_name": None,
@@ -433,8 +455,10 @@ class LayoutOptimizerService:
                     "material_name": material.name,
                     "x": round(x, 3),
                     "y": round(y, 3),
+                    "z": round(z, 3),
                     "length": material.length,
                     "width": material.width,
+                    "height": material.height,
                     "display_color": material.display_color,
                     "assigned_crane_id": crane_choice.crane_id,
                     "assigned_crane_name": crane_choice.crane_name,
@@ -445,7 +469,7 @@ class LayoutOptimizerService:
                 }
 
             penalty += local_penalty
-            occupied.append(rect)
+            occupied.append(box)
             placements.append(placement)
 
         return {
@@ -463,9 +487,11 @@ class LayoutOptimizerService:
         material: schemas.MaterialInput,
         x: float,
         y: float,
+        z: float,
         cranes: list[schemas.CraneInput],
-        obstacle_rects: list[Rect],
+        obstacle_boxes: list[Box3D],
         crane_path_penalty: float,
+        clearance: float,
     ) -> CraneChoice | None:
         best_choice: CraneChoice | None = None
 
@@ -473,15 +499,17 @@ class LayoutOptimizerService:
             if crane.capacity_tons < material.weight_tons:
                 continue
 
-            distance = math.dist((crane.x, crane.y), (x, y))
-            if distance > crane.max_radius:
+            horizontal_distance = math.dist((crane.x, crane.y), (x, y))
+            if horizontal_distance > crane.max_radius:
                 continue
 
+            travel_z = z + material.height + max(clearance, 0.1)
             path_crosses_obstacle = any(
-                self._segment_intersects_rect(crane.x, crane.y, x, y, obstacle)
-                for obstacle in obstacle_rects
+                self._segment_intersects_box_at_height(crane.x, crane.y, x, y, travel_z, obstacle)
+                for obstacle in obstacle_boxes
             )
 
+            distance = math.dist((crane.x, crane.y, 0.0), (x, y, z + material.height / 2))
             cost = distance * material.weight_tons * material.handling_frequency
             if path_crosses_obstacle:
                 cost += crane_path_penalty * material.weight_tons
@@ -608,50 +636,96 @@ class LayoutOptimizerService:
         return x, y
 
     @staticmethod
-    def _rect_from_center(x: float, y: float, length: float, width: float, clearance: float = 0.0) -> Rect:
-        half_length = (length / 2) + clearance
-        half_width = (width / 2) + clearance
-        return Rect(
+    def _material_box_from_center(
+        x: float,
+        y: float,
+        material: schemas.MaterialInput,
+        clearance: float = 0.0,
+    ) -> Box3D:
+        half_length = (material.length / 2) + clearance
+        half_width = (material.width / 2) + clearance
+        return Box3D(
             min_x=x - half_length,
             max_x=x + half_length,
             min_y=y - half_width,
             max_y=y + half_width,
+            min_z=0.0,
+            max_z=material.height,
         )
 
     @staticmethod
-    def _rects_overlap(left: Rect, right: Rect) -> bool:
+    def _box_from_obstacle(obstacle: schemas.ObstacleInput, clearance: float = 0.0) -> Box3D:
+        half_length = (obstacle.length / 2) + clearance
+        half_width = (obstacle.width / 2) + clearance
+        min_z = obstacle.min_z if obstacle.min_z is not None else 0.0
+        if obstacle.max_z is not None:
+            max_z = obstacle.max_z
+        else:
+            max_z = min_z + (obstacle.height or 0.0)
+        return Box3D(
+            min_x=obstacle.x - half_length,
+            max_x=obstacle.x + half_length,
+            min_y=obstacle.y - half_width,
+            max_y=obstacle.y + half_width,
+            min_z=min_z,
+            max_z=max_z,
+        )
+
+    @staticmethod
+    def _boxes_overlap(left: Box3D, right: Box3D) -> bool:
         return not (
             left.max_x <= right.min_x
             or left.min_x >= right.max_x
             or left.max_y <= right.min_y
             or left.min_y >= right.max_y
+            or left.max_z <= right.min_z
+            or left.min_z >= right.max_z
         )
 
-    @staticmethod
-    def _rect_inside_boundary(rect: Rect, boundary: schemas.SiteBoundary) -> bool:
-        return (
-            rect.min_x >= boundary.min_x
-            and rect.max_x <= boundary.max_x
-            and rect.min_y >= boundary.min_y
-            and rect.max_y <= boundary.max_y
+    def _box_inside_boundary(
+        self,
+        box: Box3D,
+        boundary: schemas.SiteBoundary,
+        site_polygon: list[schemas.BoundaryPoint] | None,
+    ) -> bool:
+        inside_envelope = (
+            box.min_x >= boundary.min_x
+            and box.max_x <= boundary.max_x
+            and box.min_y >= boundary.min_y
+            and box.max_y <= boundary.max_y
         )
+        if not inside_envelope:
+            return False
+        if not site_polygon:
+            return True
 
-    def _segment_intersects_rect(
+        corners = [
+            (box.min_x, box.min_y),
+            (box.max_x, box.min_y),
+            (box.max_x, box.max_y),
+            (box.min_x, box.max_y),
+        ]
+        return all(self._point_in_polygon(x, y, site_polygon) for x, y in corners)
+
+    def _segment_intersects_box_at_height(
         self,
         x1: float,
         y1: float,
         x2: float,
         y2: float,
-        rect: Rect,
+        z: float,
+        box: Box3D,
     ) -> bool:
-        if self._point_in_rect(x1, y1, rect) or self._point_in_rect(x2, y2, rect):
+        if z <= box.min_z or z >= box.max_z:
+            return False
+        if self._point_in_box_footprint(x1, y1, box) or self._point_in_box_footprint(x2, y2, box):
             return True
 
         corners = [
-            (rect.min_x, rect.min_y),
-            (rect.max_x, rect.min_y),
-            (rect.max_x, rect.max_y),
-            (rect.min_x, rect.max_y),
+            (box.min_x, box.min_y),
+            (box.max_x, box.min_y),
+            (box.max_x, box.max_y),
+            (box.min_x, box.max_y),
         ]
         edges = [
             (corners[0], corners[1]),
@@ -666,8 +740,42 @@ class LayoutOptimizerService:
         return False
 
     @staticmethod
-    def _point_in_rect(x: float, y: float, rect: Rect) -> bool:
-        return rect.min_x <= x <= rect.max_x and rect.min_y <= y <= rect.max_y
+    def _point_in_box_footprint(x: float, y: float, box: Box3D) -> bool:
+        return box.min_x <= x <= box.max_x and box.min_y <= y <= box.max_y
+
+    @staticmethod
+    def _point_in_polygon(
+        x: float,
+        y: float,
+        polygon: list[schemas.BoundaryPoint],
+    ) -> bool:
+        inside = False
+        for index, point in enumerate(polygon):
+            next_point = polygon[(index + 1) % len(polygon)]
+            if LayoutOptimizerService._point_on_segment(x, y, point, next_point):
+                return True
+            intersects = ((point.y > y) != (next_point.y > y)) and (
+                x < (next_point.x - point.x) * (y - point.y) / ((next_point.y - point.y) or 1e-9) + point.x
+            )
+            if intersects:
+                inside = not inside
+        return inside
+
+    @staticmethod
+    def _point_on_segment(
+        x: float,
+        y: float,
+        start: schemas.BoundaryPoint,
+        end: schemas.BoundaryPoint,
+    ) -> bool:
+        cross = (x - start.x) * (end.y - start.y) - (y - start.y) * (end.x - start.x)
+        if abs(cross) > 1e-6:
+            return False
+
+        return (
+            min(start.x, end.x) - 1e-6 <= x <= max(start.x, end.x) + 1e-6
+            and min(start.y, end.y) - 1e-6 <= y <= max(start.y, end.y) + 1e-6
+        )
 
     @staticmethod
     def _segments_intersect(

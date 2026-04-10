@@ -15,8 +15,14 @@ export interface EnvelopeGuide {
   height?: number | null;
 }
 
+export interface BoundaryPoint {
+  x: number;
+  y: number;
+}
+
 export interface SceneGuides {
   wall_envelope?: EnvelopeGuide | null;
+  wall_boundary_path?: BoundaryPoint[];
   building_envelopes: Record<string, EnvelopeGuide>;
   recommended_road_offset?: number | null;
 }
@@ -63,8 +69,10 @@ export interface PlacementResult {
   material_name: string;
   x: number;
   y: number;
+  z: number;
   length: number;
   width: number;
+  height: number;
   display_color?: string | null;
   assigned_crane_id?: string | null;
   assigned_crane_name?: string | null;
