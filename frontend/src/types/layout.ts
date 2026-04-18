@@ -27,6 +27,33 @@ export interface SceneGuides {
   recommended_road_offset?: number | null;
 }
 
+export interface PhaseModel {
+  id: string;
+  name: string;
+  sequence: number;
+  objective?: string | null;
+  start_day?: number | null;
+  end_day?: number | null;
+  status: string;
+}
+
+export interface ControlZoneModel {
+  id: string;
+  name: string;
+  zone_type: string;
+  x: number;
+  y: number;
+  length: number;
+  width: number;
+  min_z?: number | null;
+  max_z?: number | null;
+  height?: number | null;
+  phase_id?: string | null;
+  blocking: boolean;
+  penalty_factor: number;
+  notes?: string | null;
+}
+
 export interface CraneModel {
   id: string;
   name: string;
@@ -49,7 +76,7 @@ export interface ObstacleModel {
   max_z?: number | null;
   height?: number | null;
   group_key?: string | null;
-  notes?: string;
+  notes?: string | null;
 }
 
 export interface MaterialModel {
@@ -61,7 +88,37 @@ export interface MaterialModel {
   height: number;
   weight_tons: number;
   handling_frequency: number;
-  display_color?: string;
+  phase_id?: string | null;
+  batch_id?: string | null;
+  priority_score: number;
+  stay_days: number;
+  target_zone_id?: string | null;
+  notes?: string | null;
+  display_color?: string | null;
+}
+
+export interface CraneOption {
+  crane_id: string;
+  crane_name: string;
+  reachable: boolean;
+  reason: string;
+  distance?: number | null;
+  estimated_cost?: number | null;
+  path_crosses_obstacle: boolean;
+}
+
+export interface DecisionFactor {
+  label: string;
+  value: string;
+  tone: string;
+}
+
+export interface ActionItem {
+  id: string;
+  category: string;
+  severity: string;
+  title: string;
+  detail: string;
 }
 
 export interface PlacementResult {
@@ -78,34 +135,71 @@ export interface PlacementResult {
   assigned_crane_name?: string | null;
   distance?: number | null;
   transport_cost?: number | null;
+  phase_id?: string | null;
+  batch_id?: string | null;
+  priority_score: number;
+  target_zone_id?: string | null;
+  target_zone_name?: string | null;
+  inside_target_zone: boolean;
+  blocking_zone_hits: string[];
+  decision_note: string;
+  decision_factors: DecisionFactor[];
+  crane_options: CraneOption[];
   path_crosses_obstacle: boolean;
   status: string;
 }
 
-export interface OptimizationMetrics {
+export interface PlanVersionSummary {
+  version_id: string;
+  version_label: string;
+  phase_id?: string | null;
+  phase_name?: string | null;
   total_cost: number;
   feasible_layout: boolean;
   placed_count: number;
   unplaced_count: number;
+  created_at: string;
+}
+
+export interface OptimizationMetrics {
+  phase_id?: string | null;
+  phase_name?: string | null;
+  total_cost: number;
+  transport_cost: number;
+  safety_penalty: number;
+  zone_penalty: number;
+  feasible_layout: boolean;
+  placed_count: number;
+  unplaced_count: number;
+  in_target_zone_count: number;
   generations: number;
   best_fitness_history: number[];
   warnings: string[];
+  decision_summary: string[];
+  action_items: ActionItem[];
 }
 
 export interface OptimizationResult {
   project_id: string;
   project_name: string;
+  phase_id?: string | null;
+  phase_name?: string | null;
   placements: PlacementResult[];
   metrics: OptimizationMetrics;
+  current_version: PlanVersionSummary;
 }
 
 export interface ProjectSnapshotModel {
   project_id: string;
   name: string;
   site_boundary: SiteBoundary;
+  phases: PhaseModel[];
+  active_phase_id?: string | null;
+  control_zones: ControlZoneModel[];
   working_cranes: CraneModel[];
   obstacles: ObstacleModel[];
   materials: MaterialModel[];
   scene_guides?: SceneGuides | null;
   latest_total_cost?: number | null;
+  recent_plan_versions: PlanVersionSummary[];
 }

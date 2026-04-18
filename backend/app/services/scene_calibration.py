@@ -15,7 +15,7 @@ HEIGHT_SCALE_TRIGGER = 60.0
 MATERIAL_HEIGHT_SCALE_TRIGGER = 8.0
 PRIMARY_BUILDING_GROUP_KEY = "building_1"
 PRIMARY_BUILDING_HEIGHT_METERS = 23.8
-QTZ60_MAX_RADIUS_METERS = 50.0
+QTZ60_MAX_RADIUS_METERS = 75.0
 QTZ60_CLEARANCE_OVER_BUILDING_METERS = 6.0
 RECOMMENDED_ROAD_OFFSET_METERS = 15.0
 
@@ -90,6 +90,16 @@ def _detect_planimetric_scale(data: dict) -> float:
             ]
         )
 
+    for control_zone in data.get("control_zones", []):
+        values.extend(
+            [
+                abs(control_zone.get("x", 0.0)),
+                abs(control_zone.get("y", 0.0)),
+                abs(control_zone.get("length", 0.0)),
+                abs(control_zone.get("width", 0.0)),
+            ]
+        )
+
     for material in data.get("materials", []):
         values.extend([abs(material.get("length", 0.0)), abs(material.get("width", 0.0))])
 
@@ -129,6 +139,11 @@ def _scale_planimetric_data(data: dict, scale: float) -> None:
             if obstacle.get(key) is not None:
                 obstacle[key] *= scale
 
+    for control_zone in data.get("control_zones", []):
+        for key in ("x", "y", "length", "width"):
+            if control_zone.get(key) is not None:
+                control_zone[key] *= scale
+
     for material in data.get("materials", []):
         for key in ("length", "width"):
             if material.get(key) is not None:
@@ -160,6 +175,9 @@ def _normalize_vertical_data(data: dict) -> None:
     for obstacle in data.get("obstacles", []):
         _normalize_vertical_block(obstacle)
 
+    for control_zone in data.get("control_zones", []):
+        _normalize_vertical_block(control_zone)
+
     scene_guides = data.get("scene_guides") or {}
     for envelope in _iter_scene_envelopes(scene_guides):
         _normalize_vertical_block(envelope)
@@ -168,7 +186,7 @@ def _normalize_vertical_data(data: dict) -> None:
 def _apply_project_calibration(data: dict) -> None:
     for crane in data.get("working_cranes", []):
         max_radius = crane.get("max_radius")
-        if max_radius is None or not 45.0 <= max_radius <= 55.0:
+        if max_radius is None or not 70.0 <= max_radius <= 80.0:
             crane["max_radius"] = QTZ60_MAX_RADIUS_METERS
 
     scene_guides = data.get("scene_guides") or {}

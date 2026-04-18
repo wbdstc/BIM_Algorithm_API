@@ -2,16 +2,17 @@
   <section ref="shellRef" class="map-shell">
     <canvas ref="canvasRef" class="map-canvas" />
 
-    <div v-if="statusTitle" class="map-status">
+    <div class="map-status">
       <span>{{ statusLabel }}</span>
       <strong>{{ statusTitle }}</strong>
     </div>
 
     <div class="map-legend">
+      <span><i class="legend-zone" /> 管控区</span>
       <span><i class="legend-road" /> 道路</span>
-      <span><i class="legend-obstacle" /> 障碍</span>
+      <span><i class="legend-obstacle" /> 建筑障碍</span>
       <span><i class="legend-crane" /> 塔吊</span>
-      <span><i class="legend-material" /> 落位</span>
+      <span><i class="legend-material" /> 物料落位</span>
     </div>
   </section>
 </template>
@@ -20,7 +21,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 
-import type { BoundaryPoint, EnvelopeGuide, ObstacleModel, SiteBoundary } from "../types/layout";
+import type { ControlZoneModel, EnvelopeGuide, ObstacleModel, SiteBoundary } from "../types/layout";
 import { useLayoutStore } from "../stores/layout";
 import { createCoordinateTransform } from "../utils/coordinateTransform";
 import {
@@ -34,16 +35,26 @@ import {
 
 const props = withDefaults(
   defineProps<{
-    highlightPlacementName?: string | null;
+    highlightMaterialId?: string | null;
   }>(),
   {
-    highlightPlacementName: null,
+    highlightMaterialId: null,
   },
 );
 
 const layoutStore = useLayoutStore();
-const { loading, obstacles, optimizationResult, sceneGuides, siteBoundary, workingCranes } =
-  storeToRefs(layoutStore);
+const {
+  activeMaterials,
+  activePhase,
+  activePhaseId,
+  loading,
+  optimizationResult,
+  phaseControlZones,
+  sceneGuides,
+  siteBoundary,
+  obstacles,
+  workingCranes,
+} = storeToRefs(layoutStore);
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const shellRef = ref<HTMLDivElement | null>(null);
@@ -51,9 +62,28 @@ const shellRef = ref<HTMLDivElement | null>(null);
 let animationFrameId = 0;
 let resizeObserver: ResizeObserver | null = null;
 let dashPhase = 0;
+type LabelAlignment = "start" | "center";
 
 const isSolidObstacle = (obstacle: ObstacleModel) =>
-  obstacle.kind !== "road" && obstacle.kind !== "wall" && obstacle.kind !== "crane";
+  obstacle.kind !== "wall" && obstacle.kind !== "crane";
+
+const visiblePlacements = computed(() =>
+  optimizationResult.value?.phase_id === activePhaseId.value
+    ? optimizationResult.value.placements
+    : [],
+);
+
+const focusedPlacement = computed(
+  () =>
+    visiblePlacements.value.find((placement) => placement.material_id === props.highlightMaterialId) ?? null,
+);
+
+const focusedZone = computed(() => {
+  if (!focusedPlacement.value?.target_zone_id) {
+    return null;
+  }
+  return phaseControlZones.value.find((zone) => zone.id === focusedPlacement.value?.target_zone_id) ?? null;
+});
 
 const visualBoundaryPath = computed(() =>
   getWallBoundaryPath(sceneGuides.value, siteBoundary.value, obstacles.value),
@@ -64,12 +94,22 @@ const visualBoundary = computed(() =>
   ?? getWallEnvelope(sceneGuides.value, siteBoundary.value, obstacles.value),
 );
 
+const viewportEnvelope = computed(() => {
+  // Keep the viewport anchored to the wall boundary so the site fills the canvas.
+  // Crane coverage outside the wall is clipped visually instead of shrinking the map.
+  return expandEnvelope(visualBoundary.value, 2);
+});
+
 const primaryBuildingEnvelope = computed(() =>
   getPrimaryBuildingEnvelope(sceneGuides.value, obstacles.value),
 );
 
 const roadPathGuide = computed(() =>
   getRoadPathGuide(sceneGuides.value, siteBoundary.value, obstacles.value),
+);
+
+const hasExplicitRoadObstacles = computed(() =>
+  obstacles.value.some((obstacle) => obstacle.kind === "road"),
 );
 
 const fallbackRoadEnvelope = computed(() => {
@@ -83,43 +123,30 @@ const fallbackRoadEnvelope = computed(() => {
   );
 });
 
-const focusedPlacement = computed(
-  () =>
-    optimizationResult.value?.placements.find(
-      (placement) => placement.material_name === props.highlightPlacementName,
-    ) ?? null,
-);
-
 const statusLabel = computed(() => {
   if (focusedPlacement.value) {
-    return "当前聚焦";
+    return "当前关注";
   }
-
   if (loading.value) {
     return "计算状态";
   }
-
-  if (!optimizationResult.value) {
-    return "等待结果";
+  if (!visiblePlacements.value.length) {
+    return "准备阶段";
   }
-
-  return "结果状态";
+  return "阶段结果";
 });
 
 const statusTitle = computed(() => {
   if (focusedPlacement.value) {
     return `${focusedPlacement.value.material_name} · ${focusedPlacement.value.assigned_crane_name || "未分配塔吊"}`;
   }
-
   if (loading.value) {
-    return "正在生成场布方案";
+    return `正在生成 ${activePhase.value?.name || "当前阶段"} 场布方案`;
   }
-
-  if (!optimizationResult.value) {
-    return "执行寻优后显示落位结果";
+  if (!visiblePlacements.value.length) {
+    return `${activePhase.value?.name || "当前阶段"} 暂无计算结果，先调整物料和管控区。`;
   }
-
-  return "点击右侧落位项可高亮地图";
+  return `${activePhase.value?.name || "当前阶段"} 已生成 ${visiblePlacements.value.length} 批物料落位。`;
 });
 
 const drawStar = (
@@ -151,31 +178,149 @@ const toBoundary = (envelope: EnvelopeGuide): SiteBoundary => ({
   max_y: envelope.max_y,
 });
 
+const controlZonePalette = (zone: ControlZoneModel) => {
+  if (zone.blocking) {
+    return {
+      fill: "rgba(248, 113, 113, 0.12)",
+      stroke: "rgba(252, 165, 165, 0.8)",
+      label: "#fecaca",
+      dash: [10, 6],
+    };
+  }
+  return {
+    fill: "rgba(34, 211, 238, 0.12)",
+    stroke: "rgba(125, 211, 252, 0.78)",
+    label: "#bae6fd",
+    dash: [],
+  };
+};
+
+const obstaclePalette = (obstacle: ObstacleModel) => {
+  if (obstacle.kind === "road") {
+    return {
+      fill: "rgba(245, 158, 11, 0.14)",
+      stroke: "rgba(251, 191, 36, 0.76)",
+      label: "#fde68a",
+    };
+  }
+
+  if (obstacle.group_key === "building_1") {
+    return {
+      fill: "rgba(59, 130, 246, 0.24)",
+      stroke: "rgba(147, 197, 253, 0.82)",
+      label: "rgba(248, 250, 252, 0.92)",
+    };
+  }
+
+  return {
+    fill: "rgba(45, 212, 191, 0.18)",
+    stroke: "rgba(94, 234, 212, 0.68)",
+    label: "rgba(248, 250, 252, 0.92)",
+  };
+};
+
+const resolveObstacleLabel = (obstacle: ObstacleModel) => {
+  if (obstacle.kind !== "road") {
+    return obstacle.name;
+  }
+
+  const source = `${obstacle.id} ${obstacle.name}`.toLowerCase();
+  if (source.includes("west")) {
+    return "西侧道路";
+  }
+  if (source.includes("east")) {
+    return "东侧道路";
+  }
+  if (source.includes("north")) {
+    return "北侧道路";
+  }
+  if (source.includes("south")) {
+    return "南侧道路";
+  }
+
+  if (obstacle.length >= obstacle.width) {
+    return obstacle.y >= 0 ? "北侧道路" : "南侧道路";
+  }
+  return obstacle.x >= 0 ? "东侧道路" : "西侧道路";
+};
+
+const drawClampedLabel = (
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  anchorLeft: number,
+  anchorTop: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  color: string,
+  alignment: LabelAlignment = "start",
+) => {
+  ctx.save();
+  ctx.font = "12px 'Microsoft YaHei UI', sans-serif";
+  const metrics = ctx.measureText(text);
+  const labelWidth = metrics.width;
+  const x = Math.min(
+    Math.max(alignment === "center" ? anchorLeft - labelWidth / 2 : anchorLeft, 10),
+    canvasWidth - labelWidth - 10,
+  );
+  const y = Math.min(Math.max(anchorTop, 18), canvasHeight - 10);
+  const pillLeft = x - 6;
+  const pillTop = y - 13;
+  const pillWidth = labelWidth + 12;
+  const pillHeight = 18;
+  ctx.fillStyle = "rgba(7, 17, 31, 0.82)";
+  ctx.beginPath();
+  ctx.roundRect(pillLeft, pillTop, pillWidth, pillHeight, 8);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+};
+
+const drawControlZone = (
+  ctx: CanvasRenderingContext2D,
+  zone: ControlZoneModel,
+  transform: ReturnType<typeof createCoordinateTransform>,
+  highlighted: boolean,
+) => {
+  const rect = transform.toScreenRect(zone.x, zone.y, zone.length, zone.width);
+  const palette = controlZonePalette(zone);
+  ctx.save();
+  ctx.fillStyle = palette.fill;
+  ctx.strokeStyle = highlighted ? "#f8fafc" : palette.stroke;
+  ctx.lineWidth = highlighted ? 2.8 : 1.8;
+  ctx.setLineDash(palette.dash);
+  if (highlighted) {
+    ctx.shadowColor = "rgba(248, 250, 252, 0.28)";
+    ctx.shadowBlur = 18;
+  }
+  ctx.beginPath();
+  ctx.rect(rect.left, rect.top, rect.width, rect.height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+};
+
 const drawPhysicalObstacle = (
   ctx: CanvasRenderingContext2D,
   obstacle: ObstacleModel,
   transform: ReturnType<typeof createCoordinateTransform>,
 ) => {
   const rect = transform.toScreenRect(obstacle.x, obstacle.y, obstacle.length, obstacle.width);
-  const isPrimary = obstacle.group_key === "building_1";
+  const palette = obstaclePalette(obstacle);
 
-  ctx.fillStyle = isPrimary ? "rgba(59, 130, 246, 0.24)" : "rgba(45, 212, 191, 0.18)";
-  ctx.strokeStyle = isPrimary ? "rgba(147, 197, 253, 0.82)" : "rgba(94, 234, 212, 0.68)";
+  ctx.fillStyle = palette.fill;
+  ctx.strokeStyle = palette.stroke;
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.rect(rect.left, rect.top, rect.width, rect.height);
   ctx.fill();
   ctx.stroke();
-
-  ctx.fillStyle = "rgba(248, 250, 252, 0.92)";
-  ctx.font = "12px 'Microsoft YaHei UI', sans-serif";
-  ctx.fillText(obstacle.name, rect.left + 8, rect.top + 18);
 };
 
 const drawBoundaryLoop = (
   ctx: CanvasRenderingContext2D,
   transform: ReturnType<typeof createCoordinateTransform>,
-  boundaryPath: BoundaryPoint[],
+  boundaryPath: { x: number; y: number }[],
 ) => {
   if (boundaryPath.length < 3) {
     return;
@@ -203,10 +348,27 @@ const drawBoundaryLoop = (
   ctx.restore();
 };
 
+const applyBoundaryClip = (
+  ctx: CanvasRenderingContext2D,
+  transform: ReturnType<typeof createCoordinateTransform>,
+  boundaryPath: { x: number; y: number }[],
+) => {
+  if (boundaryPath.length < 3) {
+    return;
+  }
+
+  const screenPoints = boundaryPath.map((point) => transform.toScreenPoint(point.x, point.y));
+  ctx.beginPath();
+  ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+  screenPoints.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.clip();
+};
+
 const drawRoadLoop = (
   ctx: CanvasRenderingContext2D,
   transform: ReturnType<typeof createCoordinateTransform>,
-  path: BoundaryPoint[],
+  path: { x: number; y: number }[],
   roadWidthWorld: number,
   closed: boolean,
 ) => {
@@ -273,7 +435,7 @@ const render = () => {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const transform = createCoordinateTransform(toBoundary(visualBoundary.value), width, height);
+  const transform = createCoordinateTransform(toBoundary(viewportEnvelope.value), width, height);
 
   const backgroundGradient = ctx.createLinearGradient(0, 0, width, height);
   backgroundGradient.addColorStop(0, "#07111f");
@@ -297,8 +459,10 @@ const render = () => {
   }
 
   drawBoundaryLoop(ctx, transform, visualBoundaryPath.value);
+  ctx.save();
+  applyBoundaryClip(ctx, transform, visualBoundaryPath.value);
 
-  if (roadPathGuide.value) {
+  if (!hasExplicitRoadObstacles.value && roadPathGuide.value) {
     drawRoadLoop(
       ctx,
       transform,
@@ -306,7 +470,7 @@ const render = () => {
       roadPathGuide.value.width,
       roadPathGuide.value.closed,
     );
-  } else if (fallbackRoadEnvelope.value) {
+  } else if (!hasExplicitRoadObstacles.value && fallbackRoadEnvelope.value) {
     drawRoadLoop(
       ctx,
       transform,
@@ -320,6 +484,10 @@ const render = () => {
       true,
     );
   }
+
+  phaseControlZones.value.forEach((zone) => {
+    drawControlZone(ctx, zone, transform, focusedZone.value?.id === zone.id);
+  });
 
   obstacles.value.filter(isSolidObstacle).forEach((obstacle) => {
     drawPhysicalObstacle(ctx, obstacle, transform);
@@ -346,13 +514,13 @@ const render = () => {
 
   const craneMap = new Map(workingCranes.value.map((item) => [item.id, item]));
 
-  optimizationResult.value?.placements.forEach((placement) => {
+  visiblePlacements.value.forEach((placement) => {
     const center = transform.toScreenPoint(placement.x, placement.y);
     const rect = transform.toScreenRect(placement.x, placement.y, placement.length, placement.width);
-    const isFocused = placement.material_name === props.highlightPlacementName;
+    const isFocused = placement.material_id === props.highlightMaterialId;
 
     ctx.save();
-    ctx.globalAlpha = isFocused ? 0.42 : 0.26;
+    ctx.globalAlpha = isFocused ? 0.46 : 0.26;
     ctx.fillStyle = placement.display_color || "#14b8a6";
     if (isFocused) {
       ctx.shadowColor = "rgba(56, 189, 248, 0.36)";
@@ -364,10 +532,6 @@ const render = () => {
     ctx.strokeStyle = isFocused ? "#f8fafc" : placement.display_color || "#14b8a6";
     ctx.lineWidth = isFocused ? 3 : 2;
     ctx.strokeRect(rect.left, rect.top, rect.width, rect.height);
-
-    ctx.fillStyle = "#f8fafc";
-    ctx.font = "13px 'Microsoft YaHei UI', sans-serif";
-    ctx.fillText(placement.material_name, rect.left + 8, rect.top + 20);
 
     const assignedCrane = placement.assigned_crane_id
       ? craneMap.get(placement.assigned_crane_id)
@@ -389,6 +553,49 @@ const render = () => {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  });
+  ctx.restore();
+
+  phaseControlZones.value.forEach((zone) => {
+    const rect = transform.toScreenRect(zone.x, zone.y, zone.length, zone.width);
+    drawClampedLabel(
+      ctx,
+      zone.name,
+      rect.left + 8,
+      rect.top + 18,
+      width,
+      height,
+      controlZonePalette(zone).label,
+    );
+  });
+
+  obstacles.value.filter(isSolidObstacle).forEach((obstacle) => {
+    const rect = transform.toScreenRect(obstacle.x, obstacle.y, obstacle.length, obstacle.width);
+    const label = resolveObstacleLabel(obstacle);
+    const isRoad = obstacle.kind === "road";
+    drawClampedLabel(
+      ctx,
+      label,
+      isRoad ? rect.left + rect.width / 2 : rect.left + 8,
+      isRoad ? rect.top + rect.height / 2 + 4 : rect.top + 18,
+      width,
+      height,
+      obstaclePalette(obstacle).label,
+      isRoad ? "center" : "start",
+    );
+  });
+
+  visiblePlacements.value.forEach((placement) => {
+    const rect = transform.toScreenRect(placement.x, placement.y, placement.length, placement.width);
+    drawClampedLabel(
+      ctx,
+      placement.material_name,
+      rect.left + 8,
+      rect.top + 20,
+      width,
+      height,
+      "#f8fafc",
+    );
   });
 };
 
@@ -413,9 +620,11 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
 });
 
-watch([sceneGuides, siteBoundary, workingCranes, obstacles, optimizationResult, () => props.highlightPlacementName], () => render(), {
-  deep: true,
-});
+watch(
+  [sceneGuides, siteBoundary, workingCranes, obstacles, phaseControlZones, optimizationResult, activeMaterials, () => props.highlightMaterialId],
+  () => render(),
+  { deep: true },
+);
 </script>
 
 <style scoped>
@@ -460,7 +669,7 @@ watch([sceneGuides, siteBoundary, workingCranes, obstacles, optimizationResult, 
 .map-status {
   top: 14px;
   left: 14px;
-  max-width: 320px;
+  max-width: 360px;
   padding: 10px 12px;
 }
 
@@ -477,6 +686,7 @@ watch([sceneGuides, siteBoundary, workingCranes, obstacles, optimizationResult, 
 .map-status strong {
   color: #f8fafc;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 .map-legend {
@@ -500,6 +710,10 @@ watch([sceneGuides, siteBoundary, workingCranes, obstacles, optimizationResult, 
   height: 10px;
   border-radius: 999px;
   display: inline-block;
+}
+
+.legend-zone {
+  background: #7dd3fc;
 }
 
 .legend-road {

@@ -5,39 +5,39 @@ import os
 import requests
 
 
-APP_KEY = "HB35SuUr16CKDSdwCFIO5O8FqorB8kDg"
-APP_SECRET = "HnxoLayhiOgXzSlo7bg42ej9bizr1Wku"
-FILE_ID = "10000990421273"
-PROJECT_NAME = "BIM 智慧工地 AI 场布示范项目"
+APP_KEY = os.getenv("BIMFACE_APP_KEY")
+APP_SECRET = os.getenv("BIMFACE_APP_SECRET")
+FILE_ID = os.getenv("BIMFACE_FILE_ID", "10000990421273")
+PROJECT_NAME = os.getenv("BIM_PROJECT_NAME", "BIM Smart Site Planning Demo")
 PROJECT_SYNC_URL = os.getenv("DATA_GATEWAY_SYNC_URL")
 
 ROLE_MAP_IDS = {
     "center_crane": {
         "id": "5327272_5311976",
-        "name": "main_crane_1",
-        "max_radius": 3200,
+        "name": "QTZ60-1",
+        "max_radius": 7500,
         "capacity_tons": 18,
         "priority_score": 1.0,
     },
     "other_cranes": [
         {
             "id": "5327272_5312858",
-            "name": "副塔吊_2",
-            "max_radius": 2800,
+            "name": "QTZ60-2",
+            "max_radius": 7500,
             "capacity_tons": 16,
             "priority_score": 0.96,
         },
         {
             "id": "5327272_5312036",
-            "name": "副塔吊_3",
-            "max_radius": 2800,
+            "name": "QTZ60-3",
+            "max_radius": 7500,
             "capacity_tons": 16,
             "priority_score": 0.94,
         },
     ],
     "buildings": {
         "building_1": {
-            "name": "主体建筑1",
+            "name": "Main Building 1",
             "ids": [
                 "5327272_5311496",
                 "5327272_5311502",
@@ -46,7 +46,7 @@ ROLE_MAP_IDS = {
             ],
         },
         "building_2": {
-            "name": "主体建筑2",
+            "name": "Main Building 2",
             "ids": [
                 "5327272_5311535",
                 "5327272_5311529",
@@ -56,7 +56,7 @@ ROLE_MAP_IDS = {
             ],
         },
         "building_3": {
-            "name": "主体建筑3",
+            "name": "Main Building 3",
             "ids": ["5327272_5314766", "5327272_5314769"],
         },
     },
@@ -78,6 +78,11 @@ ROLE_MAP_IDS = {
         "5327272_5313149",
     ],
 }
+
+
+def ensure_gateway_config():
+    if not APP_KEY or not APP_SECRET:
+        raise SystemExit("Missing BIMFACE_APP_KEY or BIMFACE_APP_SECRET in the environment.")
 
 
 def get_access_token():
@@ -160,12 +165,7 @@ def relative_corners_from_metrics(metrics, origin_x, origin_y):
 
 
 def convex_hull(points):
-    unique_points = sorted(
-        {
-            (round(point["x"], 6), round(point["y"], 6))
-            for point in points
-        }
-    )
+    unique_points = sorted({(round(point["x"], 6), round(point["y"], 6)) for point in points})
     if len(unique_points) <= 1:
         return [{"x": x, "y": y} for x, y in unique_points]
 
@@ -209,6 +209,118 @@ def create_relative_obstacle(metrics, origin_x, origin_y, *, obstacle_id, name, 
     return obstacle
 
 
+def default_phases():
+    return [
+        {
+            "id": "phase-structure",
+            "name": "主体施工",
+            "sequence": 1,
+            "objective": "围绕主体结构吊装、钢筋和模板堆场进行场布。",
+            "start_day": 1,
+            "end_day": 28,
+            "status": "active",
+        },
+        {
+            "id": "phase-envelope",
+            "name": "外围封闭",
+            "sequence": 2,
+            "objective": "优先保证机电材料与外立面周转路径。",
+            "start_day": 29,
+            "end_day": 52,
+            "status": "planned",
+        },
+        {
+            "id": "phase-fitout",
+            "name": "机电穿插",
+            "sequence": 3,
+            "objective": "控制小批量、多频次物料的临时落位和清运节奏。",
+            "start_day": 53,
+            "end_day": 84,
+            "status": "planned",
+        },
+    ]
+
+
+def default_control_zones(site_boundary, building_envelopes):
+    building_1 = building_envelopes.get("building_1")
+    building_2 = building_envelopes.get("building_2")
+    building_3 = building_envelopes.get("building_3")
+    if not building_1:
+        return []
+
+    north_center_x = (building_1["min_x"] + building_1["max_x"]) / 2
+    north_center_y = building_1["max_y"] + 7.5
+    west_center_x = building_1["min_x"] - 6.2
+    west_center_y = (building_1["min_y"] + building_1["max_y"]) / 2
+    south_center_x = (
+        max(building_2["min_x"] - 10.5, site_boundary["min_x"] + 9)
+        if building_2
+        else site_boundary["min_x"] + 9
+    )
+    south_center_y = site_boundary["min_y"] + 8
+    east_center_x = (
+        min(site_boundary["max_x"] - 8, (building_3["max_x"] + site_boundary["max_x"]) / 2)
+        if building_3
+        else site_boundary["max_x"] - 8
+    )
+    east_center_y = (
+        building_3["min_y"] - 14.0
+        if building_3
+        else (site_boundary["min_y"] + site_boundary["max_y"]) / 2
+    )
+
+    return [
+        {
+            "id": "zone-north-staging",
+            "name": "北侧钢筋暂存区",
+            "zone_type": "staging",
+            "x": north_center_x,
+            "y": north_center_y,
+            "length": 18,
+            "width": 10,
+            "phase_id": "phase-structure",
+            "blocking": False,
+            "penalty_factor": 1.0,
+        },
+        {
+            "id": "zone-west-buffer",
+            "name": "西侧模板缓冲区",
+            "zone_type": "staging",
+            "x": west_center_x,
+            "y": west_center_y,
+            "length": 12,
+            "width": 18,
+            "phase_id": "phase-structure",
+            "blocking": False,
+            "penalty_factor": 1.1,
+        },
+        {
+            "id": "zone-south-delivery",
+            "name": "南侧卸料通道",
+            "zone_type": "delivery_lane",
+            "x": south_center_x,
+            "y": south_center_y,
+            "length": 18,
+            "width": 6,
+            "phase_id": "phase-structure",
+            "blocking": True,
+            "penalty_factor": 1.0,
+        },
+        {
+            "id": "zone-east-emergency",
+            "name": "东侧应急通廊",
+            "zone_type": "emergency_access",
+            "x": east_center_x,
+            "y": east_center_y,
+            "length": 8,
+            "width": 26,
+            "phase_id": None,
+            "blocking": True,
+            "penalty_factor": 1.0,
+        },
+    ]
+
+
 def push_snapshot_to_fastapi(sync_url, payload):
     response = requests.put(
         sync_url,
@@ -220,6 +332,7 @@ def push_snapshot_to_fastapi(sync_url, payload):
 
 
 if __name__ == "__main__":
+    ensure_gateway_config()
     token = get_access_token()
     print("Starting BIM gateway extraction...\n")
 
@@ -231,6 +344,9 @@ if __name__ == "__main__":
             "min_y": float("inf"),
             "max_y": float("-inf"),
         },
+        "phases": default_phases(),
+        "active_phase_id": "phase-structure",
+        "control_zones": [],
         "working_cranes": [],
         "obstacles": [],
         "materials": [],
@@ -322,7 +438,7 @@ if __name__ == "__main__":
                 origin_x,
                 origin_y,
                 obstacle_id=element_id,
-                name=f"道路段_{index}",
+                name=f"Road Segment {index}",
                 kind="road",
             )
         )
@@ -342,7 +458,7 @@ if __name__ == "__main__":
                 origin_x,
                 origin_y,
                 obstacle_id=element_id,
-                name=f"围墙段_{index}",
+                name=f"Wall Segment {index}",
                 kind="wall",
             )
         )
@@ -370,6 +486,10 @@ if __name__ == "__main__":
         origin_y,
     )
     payload_for_ga["scene_guides"]["wall_boundary_path"] = convex_hull(wall_boundary_points)
+    payload_for_ga["control_zones"] = default_control_zones(
+        payload_for_ga["site_boundary"],
+        payload_for_ga["scene_guides"]["building_envelopes"],
+    )
 
     print(json.dumps(payload_for_ga, indent=4, ensure_ascii=False))
 

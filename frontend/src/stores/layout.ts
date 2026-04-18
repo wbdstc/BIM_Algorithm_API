@@ -1,11 +1,14 @@
 import { defineStore } from "pinia";
 
 import type {
+  ControlZoneModel,
   CraneModel,
   EnvelopeGuide,
   MaterialModel,
   ObstacleModel,
   OptimizationResult,
+  PhaseModel,
+  PlanVersionSummary,
   ProjectSnapshotModel,
   SceneGuides,
   SiteBoundary,
@@ -78,13 +81,43 @@ const defaultSceneGuides: SceneGuides = {
   recommended_road_offset: roadOffset,
 };
 
+const defaultPhases: PhaseModel[] = [
+  {
+    id: "phase-structure",
+    name: "主体施工",
+    sequence: 1,
+    objective: "围绕主体结构吊装、钢筋和模板堆场进行场布。",
+    start_day: 1,
+    end_day: 28,
+    status: "active",
+  },
+  {
+    id: "phase-envelope",
+    name: "外围封闭",
+    sequence: 2,
+    objective: "优先保证机电材料与外立面周转路径。",
+    start_day: 29,
+    end_day: 52,
+    status: "planned",
+  },
+  {
+    id: "phase-fitout",
+    name: "机电穿插",
+    sequence: 3,
+    objective: "控制小批量、多频次物料的临时落位和清运节奏。",
+    start_day: 53,
+    end_day: 84,
+    status: "planned",
+  },
+];
+
 const defaultCranes: CraneModel[] = [
   {
     id: "crane-main",
     name: "QTZ60-1",
     x: 0,
     y: 0,
-    max_radius: 50,
+    max_radius: 75,
     capacity_tons: 6,
     priority_score: 1,
   },
@@ -93,7 +126,7 @@ const defaultCranes: CraneModel[] = [
     name: "QTZ60-2",
     x: 21.683222,
     y: 5.603814,
-    max_radius: 50,
+    max_radius: 75,
     capacity_tons: 6,
     priority_score: 0.96,
   },
@@ -102,99 +135,11 @@ const defaultCranes: CraneModel[] = [
     name: "QTZ60-3",
     x: 19.499692,
     y: -16.905839,
-    max_radius: 50,
+    max_radius: 75,
     capacity_tons: 6,
     priority_score: 0.94,
   },
 ];
-
-const layoutSnapshot = [
-  {
-    material_name: "Rebar Yard",
-    optimal_x: -3.2,
-    optimal_y: 9.8,
-    nearest_crane: "QTZ60-1",
-    l: 2,
-    w: 1,
-  },
-  {
-    material_name: "Formwork Yard",
-    optimal_x: -4.2,
-    optimal_y: -8.2,
-    nearest_crane: "QTZ60-1",
-    l: 1.5,
-    w: 1.5,
-  },
-] as const;
-
-const isFormworkMaterial = (name: string) => name.toLowerCase().includes("formwork");
-
-const createMaterialFromSnapshot = (
-  item: (typeof layoutSnapshot)[number],
-  index: number,
-): MaterialModel => ({
-  id: `material-${crypto.randomUUID()}`,
-  name: item.material_name,
-  category: isFormworkMaterial(item.material_name) ? "formwork" : "steel",
-  length: item.l,
-  width: item.w,
-  height: isFormworkMaterial(item.material_name) ? 0.25 : 0.4,
-  weight_tons: isFormworkMaterial(item.material_name) ? 1.5 : 3.5,
-  handling_frequency: isFormworkMaterial(item.material_name) ? 0.8 : 1.2,
-  display_color: colorPalette[index % colorPalette.length],
-});
-
-const createSnapshotOptimizationResult = (): OptimizationResult => {
-  const craneByName = new Map(defaultCranes.map((crane) => [crane.name, crane]));
-
-  return {
-    project_id: "demo-smart-site",
-    project_name: "BIM Smart Site Demo",
-    placements: layoutSnapshot.map((item, index) => {
-      const assignedCrane = craneByName.get(item.nearest_crane);
-      const isFormwork = isFormworkMaterial(item.material_name);
-
-      return {
-        material_id: `snapshot-placement-${index + 1}`,
-        material_name: item.material_name,
-        x: item.optimal_x,
-        y: item.optimal_y,
-        z: 0,
-        length: item.l,
-        width: item.w,
-        height: isFormwork ? 0.25 : 0.4,
-        display_color: colorPalette[index % colorPalette.length],
-        assigned_crane_id: assignedCrane?.id ?? null,
-        assigned_crane_name: assignedCrane?.name ?? item.nearest_crane,
-        distance: null,
-        transport_cost: null,
-        path_crosses_obstacle: false,
-        status: "placed",
-      };
-    }),
-    metrics: {
-      total_cost: 0,
-      feasible_layout: true,
-      placed_count: layoutSnapshot.length,
-      unplaced_count: 0,
-      generations: 0,
-      best_fitness_history: [],
-      warnings: [],
-    },
-  };
-};
-
-const createDefaultMaterial = (index: number): MaterialModel => ({
-  id: `material-${crypto.randomUUID()}`,
-  name: `Material ${index + 1}`,
-  category: "steel",
-  length: 1.2,
-  width: 0.8,
-  height: 0.3,
-  weight_tons: 2,
-  handling_frequency: 1,
-  display_color: colorPalette[index % colorPalette.length],
-});
 
 const createEnvelopeObstacle = (
   id: string,
@@ -231,7 +176,7 @@ const createRingRoadObstacles = (
   return [
     createEnvelopeObstacle(
       "road-west",
-      "Ring Road West",
+      "West Ring Road",
       "road",
       {
         min_x,
@@ -242,7 +187,7 @@ const createRingRoadObstacles = (
     ),
     createEnvelopeObstacle(
       "road-north",
-      "Ring Road North",
+      "North Ring Road",
       "road",
       {
         min_x,
@@ -253,7 +198,7 @@ const createRingRoadObstacles = (
     ),
     createEnvelopeObstacle(
       "road-east",
-      "Ring Road East",
+      "East Ring Road",
       "road",
       {
         min_x: max_x - thickness,
@@ -264,7 +209,7 @@ const createRingRoadObstacles = (
     ),
     createEnvelopeObstacle(
       "road-south",
-      "Ring Road South",
+      "South Ring Road",
       "road",
       {
         min_x,
@@ -335,11 +280,212 @@ const defaultObstacles: ObstacleModel[] = [
   ...createWallObstacles(wallEnvelope, wallThickness),
 ];
 
+const defaultControlZones: ControlZoneModel[] = [
+  {
+    id: "zone-north-staging",
+    name: "北侧钢筋暂存区",
+    zone_type: "staging",
+    x: 17,
+    y: 28.5,
+    length: 18,
+    width: 10,
+    phase_id: "phase-structure",
+    blocking: false,
+    penalty_factor: 1,
+    notes: "主体施工阶段优先存放钢筋与模板周转料。",
+  },
+  {
+    id: "zone-west-buffer",
+    name: "西侧模板缓冲区",
+    zone_type: "staging",
+    x: -5.5,
+    y: -2,
+    length: 12,
+    width: 18,
+    phase_id: "phase-structure",
+    blocking: false,
+    penalty_factor: 1.1,
+    notes: "适合频繁周转的模板和支撑系统。",
+  },
+  {
+    id: "zone-south-delivery",
+    name: "南侧卸料通道",
+    zone_type: "delivery_lane",
+    x: -1,
+    y: -38,
+    length: 18,
+    width: 6,
+    phase_id: "phase-structure",
+    blocking: true,
+    penalty_factor: 1,
+    notes: "保持混凝土车和运输车辆连续通行。",
+  },
+  {
+    id: "zone-east-emergency",
+    name: "东侧应急通廊",
+    zone_type: "emergency_access",
+    x: 54,
+    y: -25,
+    length: 8,
+    width: 26,
+    phase_id: null,
+    blocking: true,
+    penalty_factor: 1,
+    notes: "各阶段必须保持净空。",
+  },
+  {
+    id: "zone-mep-buffer",
+    name: "机电成品缓冲区",
+    zone_type: "staging",
+    x: 38,
+    y: 28,
+    length: 16,
+    width: 10,
+    phase_id: "phase-envelope",
+    blocking: false,
+    penalty_factor: 1.1,
+    notes: "外围封闭与机电穿插阶段共用。",
+  },
+];
+
+const layoutSnapshot = [
+  {
+    material_name: "钢筋主堆场",
+    phase_id: "phase-structure",
+    batch_id: "S-01",
+    optimal_x: -4,
+    optimal_y: 25,
+    l: 8,
+    w: 4,
+    height: 1.2,
+    weight_tons: 5.5,
+    handling_frequency: 1.4,
+    priority_score: 1.2,
+    stay_days: 5,
+    target_zone_id: "zone-north-staging",
+    category: "steel",
+  },
+  {
+    material_name: "模板周转区",
+    phase_id: "phase-structure",
+    batch_id: "F-01",
+    optimal_x: -7,
+    optimal_y: -5,
+    l: 6,
+    w: 5,
+    height: 1.1,
+    weight_tons: 3.2,
+    handling_frequency: 1.1,
+    priority_score: 1,
+    stay_days: 4,
+    target_zone_id: "zone-west-buffer",
+    category: "formwork",
+  },
+  {
+    material_name: "幕墙龙骨包",
+    phase_id: "phase-envelope",
+    batch_id: "E-02",
+    optimal_x: 39,
+    optimal_y: 27,
+    l: 5,
+    w: 3,
+    height: 1,
+    weight_tons: 2.8,
+    handling_frequency: 0.9,
+    priority_score: 1,
+    stay_days: 3,
+    target_zone_id: "zone-mep-buffer",
+    category: "facade",
+  },
+  {
+    material_name: "桥架成品包",
+    phase_id: "phase-fitout",
+    batch_id: "M-03",
+    optimal_x: 37,
+    optimal_y: 27,
+    l: 4.2,
+    w: 2.2,
+    height: 1,
+    weight_tons: 1.8,
+    handling_frequency: 1.5,
+    priority_score: 1.3,
+    stay_days: 2,
+    target_zone_id: "zone-mep-buffer",
+    category: "mep",
+  },
+] as const;
+
+const createMaterialFromSnapshot = (
+  item: (typeof layoutSnapshot)[number],
+  index: number,
+): MaterialModel => ({
+  id: `material-${crypto.randomUUID()}`,
+  name: item.material_name,
+  category: item.category,
+  length: item.l,
+  width: item.w,
+  height: item.height,
+  weight_tons: item.weight_tons,
+  handling_frequency: item.handling_frequency,
+  phase_id: item.phase_id,
+  batch_id: item.batch_id,
+  priority_score: item.priority_score,
+  stay_days: item.stay_days,
+  target_zone_id: item.target_zone_id,
+  notes: null,
+  display_color: colorPalette[index % colorPalette.length],
+});
+
 const normalizeMaterials = (materials: MaterialModel[]): MaterialModel[] =>
   materials.map((material, index) => ({
     ...material,
+    phase_id: material.phase_id ?? defaultPhases[0].id,
+    priority_score: material.priority_score || 1,
+    stay_days: material.stay_days || 3,
     display_color: material.display_color || colorPalette[index % colorPalette.length],
   }));
+
+const clonePhases = (phases: PhaseModel[]): PhaseModel[] =>
+  phases.map((phase) => ({ ...phase }));
+
+const cloneZones = (zones: ControlZoneModel[]): ControlZoneModel[] =>
+  zones.map((zone) => ({ ...zone }));
+
+const cloneObstacles = (obstacles: ObstacleModel[]): ObstacleModel[] =>
+  obstacles.map((obstacle) => ({ ...obstacle }));
+
+const cloneCranes = (cranes: CraneModel[]): CraneModel[] =>
+  cranes.map((crane) => ({ ...crane }));
+
+const createDefaultMaterial = (
+  index: number,
+  phaseId: string | null,
+  targetZoneId: string | null,
+): MaterialModel => ({
+  id: `material-${crypto.randomUUID()}`,
+  name: `新物料 ${index + 1}`,
+  category: "general",
+  length: 4.5,
+  width: 2.5,
+  height: 1,
+  weight_tons: 2.5,
+  handling_frequency: 1,
+  phase_id: phaseId,
+  batch_id: `B-${index + 1}`,
+  priority_score: 1,
+  stay_days: 3,
+  target_zone_id: targetZoneId,
+  notes: null,
+  display_color: colorPalette[index % colorPalette.length],
+});
+
+const mergeRecentVersions = (
+  existing: PlanVersionSummary[],
+  incoming: PlanVersionSummary,
+): PlanVersionSummary[] => {
+  const deduped = [incoming, ...existing.filter((item) => item.version_id !== incoming.version_id)];
+  return deduped.slice(0, 6);
+};
 
 export const useLayoutStore = defineStore("layout", {
   state: () => ({
@@ -348,29 +494,61 @@ export const useLayoutStore = defineStore("layout", {
     projectName: "BIM Smart Site Demo",
     siteBoundary: realSiteBoundary,
     sceneGuides: defaultSceneGuides as SceneGuides | null,
-    workingCranes: defaultCranes,
-    obstacles: defaultObstacles,
+    phases: clonePhases(defaultPhases),
+    activePhaseId: defaultPhases[0].id,
+    controlZones: cloneZones(defaultControlZones),
+    workingCranes: cloneCranes(defaultCranes),
+    obstacles: cloneObstacles(defaultObstacles),
     materials: layoutSnapshot.map((item, index) => createMaterialFromSnapshot(item, index)),
-    optimizationResult: createSnapshotOptimizationResult() as OptimizationResult | null,
+    optimizationResult: null as OptimizationResult | null,
+    recentPlanVersions: [] as PlanVersionSummary[],
     loading: false,
     error: "",
   }),
   getters: {
-    totalMaterials: (state) => state.materials.length,
-    hasResult: (state) => state.optimizationResult !== null,
+    activePhase: (state) =>
+      state.phases.find((phase) => phase.id === state.activePhaseId) ?? state.phases[0] ?? null,
+    activeMaterials: (state) => {
+      if (!state.phases.length || !state.activePhaseId) {
+        return state.materials;
+      }
+      return state.materials.filter((material) => material.phase_id === state.activePhaseId);
+    },
+    phaseControlZones: (state) =>
+      state.controlZones.filter((zone) => !zone.phase_id || zone.phase_id === state.activePhaseId),
+    hasResult: (state) =>
+      state.optimizationResult !== null && state.optimizationResult.phase_id === state.activePhaseId,
   },
   actions: {
     applyProjectSnapshot(snapshot: ProjectSnapshotModel) {
       this.currentProjectId = snapshot.project_id;
       this.projectName = snapshot.name;
       this.siteBoundary = { ...snapshot.site_boundary };
-      this.sceneGuides = snapshot.scene_guides ?? null;
-      this.workingCranes = [...snapshot.working_cranes];
-      this.obstacles = [...snapshot.obstacles];
+      this.sceneGuides = snapshot.scene_guides ?? defaultSceneGuides;
+      this.phases = snapshot.phases.length ? clonePhases(snapshot.phases) : clonePhases(defaultPhases);
+      this.activePhaseId = snapshot.active_phase_id ?? this.phases[0]?.id ?? null;
+      this.controlZones = snapshot.control_zones.length
+        ? cloneZones(snapshot.control_zones)
+        : cloneZones(defaultControlZones);
+      this.workingCranes = snapshot.working_cranes.length
+        ? cloneCranes(snapshot.working_cranes)
+        : cloneCranes(defaultCranes);
+      this.obstacles = snapshot.obstacles.length
+        ? cloneObstacles(snapshot.obstacles)
+        : cloneObstacles(defaultObstacles);
       if (snapshot.materials.length > 0) {
         this.materials = normalizeMaterials(snapshot.materials);
       }
-      this.optimizationResult = null;
+      this.recentPlanVersions = [...snapshot.recent_plan_versions];
+      if (this.optimizationResult && this.optimizationResult.phase_id !== this.activePhaseId) {
+        this.optimizationResult = null;
+      }
+    },
+    setActivePhase(phaseId: string) {
+      this.activePhaseId = phaseId;
+      if (this.optimizationResult && this.optimizationResult.phase_id !== phaseId) {
+        this.optimizationResult = null;
+      }
     },
     async loadProjectSnapshot() {
       try {
@@ -381,11 +559,13 @@ export const useLayoutStore = defineStore("layout", {
 
         this.applyProjectSnapshot((await response.json()) as ProjectSnapshotModel);
       } catch {
-        // Keep the local demo scene when the backend snapshot is unavailable.
+        // Keep the local planning scene when the backend snapshot is unavailable.
       }
     },
     addMaterial() {
-      this.materials.push(createDefaultMaterial(this.materials.length));
+      const targetZoneId =
+        this.phaseControlZones.find((zone) => !zone.blocking && zone.zone_type === "staging")?.id ?? null;
+      this.materials.push(createDefaultMaterial(this.materials.length, this.activePhaseId, targetZoneId));
     },
     removeMaterial(id: string) {
       if (this.materials.length === 1) {
@@ -407,6 +587,9 @@ export const useLayoutStore = defineStore("layout", {
           body: JSON.stringify({
             name: this.projectName,
             site_boundary: this.siteBoundary,
+            phases: this.phases,
+            active_phase_id: this.activePhaseId,
+            control_zones: this.controlZones,
             scene_guides: this.sceneGuides,
             working_cranes: this.workingCranes,
             obstacles: this.obstacles,
@@ -416,6 +599,7 @@ export const useLayoutStore = defineStore("layout", {
             mutation_rate: 0.22,
             clearance: 1.2,
             crane_path_penalty: 22,
+            zone_preference_penalty: 14,
           }),
         });
 
@@ -425,6 +609,10 @@ export const useLayoutStore = defineStore("layout", {
         }
 
         this.optimizationResult = (await response.json()) as OptimizationResult;
+        this.recentPlanVersions = mergeRecentVersions(
+          this.recentPlanVersions,
+          this.optimizationResult.current_version,
+        );
       } catch (error) {
         this.error = error instanceof Error ? error.message : "Layout optimization failed.";
       } finally {

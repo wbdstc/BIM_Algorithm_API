@@ -39,6 +39,23 @@ def ensure_runtime_schema() -> None:
         project_columns = {column["name"] for column in inspector.get_columns("projects")}
         if "scene_guides" not in project_columns:
             statements.append("ALTER TABLE projects ADD COLUMN scene_guides JSON")
+        if "active_phase_id" not in project_columns:
+            statements.append("ALTER TABLE projects ADD COLUMN active_phase_id VARCHAR(64)")
+
+    if "materials" in table_names:
+        material_columns = {column["name"] for column in inspector.get_columns("materials")}
+        if "phase_id" not in material_columns:
+            statements.append("ALTER TABLE materials ADD COLUMN phase_id VARCHAR(64)")
+        if "batch_id" not in material_columns:
+            statements.append("ALTER TABLE materials ADD COLUMN batch_id VARCHAR(64)")
+        if "priority_score" not in material_columns:
+            statements.append("ALTER TABLE materials ADD COLUMN priority_score FLOAT DEFAULT 1.0")
+        if "stay_days" not in material_columns:
+            statements.append("ALTER TABLE materials ADD COLUMN stay_days FLOAT DEFAULT 3.0")
+        if "target_zone_id" not in material_columns:
+            statements.append("ALTER TABLE materials ADD COLUMN target_zone_id VARCHAR(64)")
+        if "notes" not in material_columns:
+            statements.append("ALTER TABLE materials ADD COLUMN notes TEXT")
 
     if "obstacles" in table_names:
         obstacle_columns = {column["name"] for column in inspector.get_columns("obstacles")}
