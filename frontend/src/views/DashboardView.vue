@@ -136,8 +136,8 @@
                       <span>长度</span>
                       <el-input-number
                         v-model="material.length"
-                        :min="1"
-                        :step="0.5"
+                        :min="0.1"
+                        :step="0.1"
                         :controls="false"
                         class="ghost-number"
                       />
@@ -146,8 +146,8 @@
                       <span>宽度</span>
                       <el-input-number
                         v-model="material.width"
-                        :min="1"
-                        :step="0.5"
+                        :min="0.1"
+                        :step="0.1"
                         :controls="false"
                         class="ghost-number"
                       />
@@ -156,8 +156,8 @@
                       <span>高度</span>
                       <el-input-number
                         v-model="material.height"
-                        :min="1"
-                        :step="0.5"
+                        :min="0.05"
+                        :step="0.05"
                         :controls="false"
                         class="ghost-number"
                       />
@@ -166,8 +166,8 @@
                       <span>重量</span>
                       <el-input-number
                         v-model="material.weight_tons"
-                        :min="0.5"
-                        :step="0.5"
+                        :min="0.1"
+                        :step="0.1"
                         :controls="false"
                         class="ghost-number"
                       />
@@ -426,7 +426,7 @@ const selectPlacement = (materialName: string) => {
 };
 
 const coordinateLabel = (placement: PlacementResult) =>
-  `坐标 ${formatMetric(placement.x)} / ${formatMetric(placement.y)}`;
+  `坐标 ${formatMetric(placement.x, 1)}m / ${formatMetric(placement.y, 1)}m`;
 
 const placementStatusLabel = (placement: PlacementResult) => {
   if (placement.status !== "placed") {

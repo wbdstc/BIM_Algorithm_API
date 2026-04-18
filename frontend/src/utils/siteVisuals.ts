@@ -325,7 +325,7 @@ export const getRoadPathGuide = (
   if (roadSegments.length <= 4) {
     const averageThickness =
       roadSegments.reduce((total, segment) => total + segment.thickness, 0) / roadSegments.length;
-    const joinThreshold = Math.max(averageThickness * 1.8, 260);
+    const joinThreshold = Math.max(averageThickness * 1.8, 2.6);
     const nodes: BoundaryPoint[] = [];
     const adjacency = new Map<number, Array<{ next: number; weight: number }>>();
 
@@ -359,7 +359,7 @@ export const getRoadPathGuide = (
 
     return {
       path: pathResult.indices.map((index) => nodes[index]),
-      width: Math.max(averageThickness, 120),
+      width: Math.max(averageThickness, 1.2),
       closed: pathResult.closed,
     };
   }
@@ -368,8 +368,8 @@ export const getRoadPathGuide = (
   const maxSpan = Math.max(...roadSegments.map((segment) => segment.span));
   const filteredSegments = roadSegments.filter((segment) => {
     const nearWall =
-      distancePointToPolyline(segment.start, wallPath) <= Math.max(segment.thickness * 1.8, 250)
-      || distancePointToPolyline(segment.end, wallPath) <= Math.max(segment.thickness * 1.8, 250);
+      distancePointToPolyline(segment.start, wallPath) <= Math.max(segment.thickness * 1.8, 2.5)
+      || distancePointToPolyline(segment.end, wallPath) <= Math.max(segment.thickness * 1.8, 2.5);
     const isShortConnector = segment.span < maxSpan * 0.72;
     return !(nearWall && isShortConnector);
   });
@@ -377,7 +377,7 @@ export const getRoadPathGuide = (
   const sourceSegments = filteredSegments.length >= 2 ? filteredSegments : roadSegments;
   const averageThickness =
     sourceSegments.reduce((total, segment) => total + segment.thickness, 0) / sourceSegments.length;
-  const joinThreshold = Math.max(averageThickness * 1.8, 260);
+  const joinThreshold = Math.max(averageThickness * 1.8, 2.6);
 
   const nodes: BoundaryPoint[] = [];
   const adjacency = new Map<number, Array<{ next: number; weight: number }>>();
@@ -412,7 +412,7 @@ export const getRoadPathGuide = (
 
   return {
     path: pathResult.indices.map((index) => nodes[index]),
-    width: Math.max(averageThickness, 120),
+    width: Math.max(averageThickness, 1.2),
     closed: pathResult.closed,
   };
 };

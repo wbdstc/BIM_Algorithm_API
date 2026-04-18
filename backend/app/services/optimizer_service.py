@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from .scene_calibration import estimate_safe_transport_height, normalize_snapshot_payload
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ class LayoutOptimizerService:
         self.seed = seed
 
     def serialize_project(self, project: models.Project) -> schemas.ProjectSnapshotResponse:
-        return schemas.ProjectSnapshotResponse(
+        snapshot = schemas.ProjectSnapshotResponse(
             project_id=project.id,
             name=project.name,
             site_boundary=schemas.SiteBoundary(
@@ -92,6 +93,7 @@ class LayoutOptimizerService:
             ],
             latest_total_cost=project.latest_total_cost,
         )
+        return normalize_snapshot_payload(snapshot)
 
     def upsert_project_snapshot(
         self,
@@ -99,6 +101,7 @@ class LayoutOptimizerService:
         project_id: str,
         payload: schemas.ProjectSnapshotRequest,
     ) -> models.Project:
+        payload = normalize_snapshot_payload(payload)
         project = db.get(models.Project, project_id)
         if project is None:
             project = models.Project(
@@ -181,12 +184,14 @@ class LayoutOptimizerService:
         project: models.Project,
         payload: schemas.OptimizeProjectRequest,
     ) -> schemas.OptimizeProjectResponse:
+        payload = normalize_snapshot_payload(payload)
         rng = random.Random(payload.random_seed if payload.random_seed is not None else self.seed)
         site_polygon = (
             payload.scene_guides.wall_boundary_path
             if payload.scene_guides and len(payload.scene_guides.wall_boundary_path) >= 3
             else None
         )
+        safe_transport_height = estimate_safe_transport_height(payload.obstacles)
         obstacle_boxes = [
             self._box_from_obstacle(obstacle, payload.clearance)
             for obstacle in payload.obstacles
@@ -221,6 +226,7 @@ class LayoutOptimizerService:
                     obstacle_boxes=obstacle_boxes,
                     clearance=payload.clearance,
                     crane_path_penalty=payload.crane_path_penalty,
+                    safe_transport_height=safe_transport_height,
                 )
                 scored_population.append((evaluation["fitness"], solution, evaluation))
 
@@ -264,6 +270,7 @@ class LayoutOptimizerService:
                 obstacle_boxes=obstacle_boxes,
                 clearance=payload.clearance,
                 crane_path_penalty=payload.crane_path_penalty,
+                safe_transport_height=safe_transport_height,
             )
 
         response = schemas.OptimizeProjectResponse(
@@ -390,6 +397,7 @@ class LayoutOptimizerService:
         obstacle_boxes: list[Box3D],
         clearance: float,
         crane_path_penalty: float,
+        safe_transport_height: float,
     ) -> dict:
         placements: list[dict] = []
         warnings: list[str] = []
@@ -423,6 +431,7 @@ class LayoutOptimizerService:
                 obstacle_boxes=obstacle_boxes,
                 crane_path_penalty=crane_path_penalty,
                 clearance=clearance,
+                safe_transport_height=safe_transport_height,
             )
 
             if crane_choice is None:
@@ -492,6 +501,7 @@ class LayoutOptimizerService:
         obstacle_boxes: list[Box3D],
         crane_path_penalty: float,
         clearance: float,
+        safe_transport_height: float,
     ) -> CraneChoice | None:
         best_choice: CraneChoice | None = None
 
@@ -503,7 +513,10 @@ class LayoutOptimizerService:
             if horizontal_distance > crane.max_radius:
                 continue
 
-            travel_z = z + material.height + max(clearance, 0.1)
+            travel_z = max(
+                z + material.height + max(clearance, 0.1),
+                safe_transport_height,
+            )
             path_crosses_obstacle = any(
                 self._segment_intersects_box_at_height(crane.x, crane.y, x, y, travel_z, obstacle)
                 for obstacle in obstacle_boxes

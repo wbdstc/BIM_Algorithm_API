@@ -79,7 +79,7 @@ const fallbackRoadEnvelope = computed(() => {
 
   return expandEnvelope(
     primaryBuildingEnvelope.value,
-    sceneGuides.value?.recommended_road_offset ?? 1500,
+    sceneGuides.value?.recommended_road_offset ?? 15,
   );
 });
 
@@ -316,7 +316,7 @@ const render = () => {
         { x: fallbackRoadEnvelope.value.max_x, y: fallbackRoadEnvelope.value.max_y },
         { x: fallbackRoadEnvelope.value.min_x, y: fallbackRoadEnvelope.value.max_y },
       ],
-      220,
+      2.2,
       true,
     );
   }

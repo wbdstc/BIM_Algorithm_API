@@ -13,45 +13,45 @@ import type {
 
 const colorPalette = ["#38BDF8", "#14B8A6", "#F59E0B", "#10B981", "#F97316", "#EF4444"];
 
-const roadOffset = 1500;
-const roadThickness = 180;
-const wallThickness = 140;
+const roadOffset = 15;
+const roadThickness = 1.8;
+const wallThickness = 1.4;
 
 const building1Envelope: EnvelopeGuide = {
-  min_x: 69.275,
-  max_x: 3349.305,
-  min_y: -2667.26,
-  max_y: 2101.0,
+  min_x: 0.69275,
+  max_x: 33.49305,
+  min_y: -26.6726,
+  max_y: 21.01,
   min_z: 0,
-  max_z: 52,
-  height: 52,
+  max_z: 23.8,
+  height: 23.8,
 };
 
 const building2Envelope: EnvelopeGuide = {
-  min_x: 1120,
-  max_x: 2400,
-  min_y: -4280,
-  max_y: -2680,
+  min_x: 11.2,
+  max_x: 24,
+  min_y: -42.8,
+  max_y: -26.8,
   min_z: 0,
-  max_z: 34,
-  height: 34,
+  max_z: 15.2,
+  height: 15.2,
 };
 
 const building3Envelope: EnvelopeGuide = {
-  min_x: 4531.55,
-  max_x: 5620.45,
-  min_y: -1078.925,
-  max_y: 2246.185,
+  min_x: 45.3155,
+  max_x: 56.2045,
+  min_y: -10.78925,
+  max_y: 22.46185,
   min_z: 0,
-  max_z: 34,
-  height: 34,
+  max_z: 18,
+  height: 18,
 };
 
 const wallEnvelope: EnvelopeGuide = {
-  min_x: -1800,
-  max_x: 6200,
-  min_y: -4600,
-  max_y: 4000,
+  min_x: -18,
+  max_x: 62,
+  min_y: -46,
+  max_y: 40,
 };
 
 const realSiteBoundary: SiteBoundary = {
@@ -64,8 +64,8 @@ const realSiteBoundary: SiteBoundary = {
 const defaultSceneGuides: SceneGuides = {
   wall_envelope: wallEnvelope,
   wall_boundary_path: [
-    { x: wallEnvelope.min_x, y: wallEnvelope.min_y + 1200 },
-    { x: wallEnvelope.min_x + 900, y: wallEnvelope.min_y },
+    { x: wallEnvelope.min_x, y: wallEnvelope.min_y + 12 },
+    { x: wallEnvelope.min_x + 9, y: wallEnvelope.min_y },
     { x: wallEnvelope.max_x, y: wallEnvelope.min_y },
     { x: wallEnvelope.max_x, y: wallEnvelope.max_y },
     { x: wallEnvelope.min_x, y: wallEnvelope.max_y },
@@ -81,51 +81,53 @@ const defaultSceneGuides: SceneGuides = {
 const defaultCranes: CraneModel[] = [
   {
     id: "crane-main",
-    name: "主塔吊_1",
+    name: "QTZ60-1",
     x: 0,
     y: 0,
-    max_radius: 3200,
-    capacity_tons: 18,
+    max_radius: 50,
+    capacity_tons: 6,
     priority_score: 1,
   },
   {
     id: "crane-secondary-2",
-    name: "副塔吊_2",
-    x: 2168.3222,
-    y: 560.3814,
-    max_radius: 2800,
-    capacity_tons: 16,
+    name: "QTZ60-2",
+    x: 21.683222,
+    y: 5.603814,
+    max_radius: 50,
+    capacity_tons: 6,
     priority_score: 0.96,
   },
   {
     id: "crane-secondary-3",
-    name: "副塔吊_3",
-    x: 1949.9692,
-    y: -1690.5839,
-    max_radius: 2800,
-    capacity_tons: 16,
+    name: "QTZ60-3",
+    x: 19.499692,
+    y: -16.905839,
+    max_radius: 50,
+    capacity_tons: 6,
     priority_score: 0.94,
   },
 ];
 
 const layoutSnapshot = [
   {
-    material_name: "重型钢筋加工区",
-    optimal_x: -320,
-    optimal_y: 980,
-    nearest_crane: "主塔吊_1",
-    l: 200,
-    w: 100,
+    material_name: "Rebar Yard",
+    optimal_x: -3.2,
+    optimal_y: 9.8,
+    nearest_crane: "QTZ60-1",
+    l: 2,
+    w: 1,
   },
   {
-    material_name: "木模板堆场",
-    optimal_x: -420,
-    optimal_y: -820,
-    nearest_crane: "主塔吊_1",
-    l: 150,
-    w: 150,
+    material_name: "Formwork Yard",
+    optimal_x: -4.2,
+    optimal_y: -8.2,
+    nearest_crane: "QTZ60-1",
+    l: 1.5,
+    w: 1.5,
   },
 ] as const;
+
+const isFormworkMaterial = (name: string) => name.toLowerCase().includes("formwork");
 
 const createMaterialFromSnapshot = (
   item: (typeof layoutSnapshot)[number],
@@ -133,12 +135,12 @@ const createMaterialFromSnapshot = (
 ): MaterialModel => ({
   id: `material-${crypto.randomUUID()}`,
   name: item.material_name,
-  category: item.material_name.includes("模板") ? "formwork" : "steel",
+  category: isFormworkMaterial(item.material_name) ? "formwork" : "steel",
   length: item.l,
   width: item.w,
-  height: item.material_name.includes("模板") ? 20 : 30,
-  weight_tons: item.material_name.includes("模板") ? 4 : 12,
-  handling_frequency: item.material_name.includes("模板") ? 0.8 : 1.2,
+  height: isFormworkMaterial(item.material_name) ? 0.25 : 0.4,
+  weight_tons: isFormworkMaterial(item.material_name) ? 1.5 : 3.5,
+  handling_frequency: isFormworkMaterial(item.material_name) ? 0.8 : 1.2,
   display_color: colorPalette[index % colorPalette.length],
 });
 
@@ -147,9 +149,10 @@ const createSnapshotOptimizationResult = (): OptimizationResult => {
 
   return {
     project_id: "demo-smart-site",
-    project_name: "BIM 智慧工地 AI 场布示范项目",
+    project_name: "BIM Smart Site Demo",
     placements: layoutSnapshot.map((item, index) => {
       const assignedCrane = craneByName.get(item.nearest_crane);
+      const isFormwork = isFormworkMaterial(item.material_name);
 
       return {
         material_id: `snapshot-placement-${index + 1}`,
@@ -159,7 +162,7 @@ const createSnapshotOptimizationResult = (): OptimizationResult => {
         z: 0,
         length: item.l,
         width: item.w,
-        height: item.material_name.includes("模板") ? 20 : 30,
+        height: isFormwork ? 0.25 : 0.4,
         display_color: colorPalette[index % colorPalette.length],
         assigned_crane_id: assignedCrane?.id ?? null,
         assigned_crane_name: assignedCrane?.name ?? item.nearest_crane,
@@ -183,12 +186,12 @@ const createSnapshotOptimizationResult = (): OptimizationResult => {
 
 const createDefaultMaterial = (index: number): MaterialModel => ({
   id: `material-${crypto.randomUUID()}`,
-  name: `新增物料 ${index + 1}`,
+  name: `Material ${index + 1}`,
   category: "steel",
-  length: 120,
-  width: 80,
-  height: 20,
-  weight_tons: 6,
+  length: 1.2,
+  width: 0.8,
+  height: 0.3,
+  weight_tons: 2,
   handling_frequency: 1,
   display_color: colorPalette[index % colorPalette.length],
 });
@@ -228,7 +231,7 @@ const createRingRoadObstacles = (
   return [
     createEnvelopeObstacle(
       "road-west",
-      "环路西段",
+      "Ring Road West",
       "road",
       {
         min_x,
@@ -239,7 +242,7 @@ const createRingRoadObstacles = (
     ),
     createEnvelopeObstacle(
       "road-north",
-      "环路北段",
+      "Ring Road North",
       "road",
       {
         min_x,
@@ -250,7 +253,7 @@ const createRingRoadObstacles = (
     ),
     createEnvelopeObstacle(
       "road-east",
-      "环路东段",
+      "Ring Road East",
       "road",
       {
         min_x: max_x - thickness,
@@ -261,7 +264,7 @@ const createRingRoadObstacles = (
     ),
     createEnvelopeObstacle(
       "road-south",
-      "环路南段",
+      "Ring Road South",
       "road",
       {
         min_x,
@@ -280,7 +283,7 @@ const createRingRoadObstacles = (
 const createWallObstacles = (envelope: EnvelopeGuide, thickness: number): ObstacleModel[] => [
   createEnvelopeObstacle(
     "wall-west",
-    "西侧围墙",
+    "West Wall",
     "wall",
     {
       min_x: envelope.min_x,
@@ -291,7 +294,7 @@ const createWallObstacles = (envelope: EnvelopeGuide, thickness: number): Obstac
   ),
   createEnvelopeObstacle(
     "wall-north",
-    "北侧围墙",
+    "North Wall",
     "wall",
     {
       min_x: envelope.min_x,
@@ -302,7 +305,7 @@ const createWallObstacles = (envelope: EnvelopeGuide, thickness: number): Obstac
   ),
   createEnvelopeObstacle(
     "wall-east",
-    "东侧围墙",
+    "East Wall",
     "wall",
     {
       min_x: envelope.max_x - thickness,
@@ -313,7 +316,7 @@ const createWallObstacles = (envelope: EnvelopeGuide, thickness: number): Obstac
   ),
   createEnvelopeObstacle(
     "wall-south",
-    "南侧围墙",
+    "South Wall",
     "wall",
     {
       min_x: envelope.min_x,
@@ -325,9 +328,9 @@ const createWallObstacles = (envelope: EnvelopeGuide, thickness: number): Obstac
 ];
 
 const defaultObstacles: ObstacleModel[] = [
-  createEnvelopeObstacle("building-1", "主体建筑1", "building", building1Envelope, "building_1"),
-  createEnvelopeObstacle("building-2", "主体建筑2", "building", building2Envelope, "building_2"),
-  createEnvelopeObstacle("building-3", "主体建筑3", "building", building3Envelope, "building_3"),
+  createEnvelopeObstacle("building-1", "Main Building 1", "building", building1Envelope, "building_1"),
+  createEnvelopeObstacle("building-2", "Main Building 2", "building", building2Envelope, "building_2"),
+  createEnvelopeObstacle("building-3", "Main Building 3", "building", building3Envelope, "building_3"),
   ...createRingRoadObstacles(building1Envelope, roadOffset, roadThickness),
   ...createWallObstacles(wallEnvelope, wallThickness),
 ];
@@ -342,7 +345,7 @@ export const useLayoutStore = defineStore("layout", {
   state: () => ({
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1",
     currentProjectId: "demo-smart-site",
-    projectName: "BIM 智慧工地 AI 场布示范项目",
+    projectName: "BIM Smart Site Demo",
     siteBoundary: realSiteBoundary,
     sceneGuides: defaultSceneGuides as SceneGuides | null,
     workingCranes: defaultCranes,
@@ -411,19 +414,19 @@ export const useLayoutStore = defineStore("layout", {
             population_size: 56,
             generations: 90,
             mutation_rate: 0.22,
-            clearance: 1,
+            clearance: 1.2,
             crane_path_penalty: 22,
           }),
         });
 
         if (!response.ok) {
           const message = await response.text();
-          throw new Error(message || "优化接口请求失败");
+          throw new Error(message || "Layout optimization failed.");
         }
 
         this.optimizationResult = (await response.json()) as OptimizationResult;
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "优化请求异常";
+        this.error = error instanceof Error ? error.message : "Layout optimization failed.";
       } finally {
         this.loading = false;
       }
