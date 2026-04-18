@@ -131,158 +131,45 @@
               导入支持 CSV；未填写阶段和目标区时，默认写入当前阶段并自动匹配可落位区域。
             </p>
 
-            <div class="material-summary-grid">
-              <article class="material-summary-card">
-                <span>当前阶段</span>
-                <strong>{{ activePhase?.name ?? "未设置" }}</strong>
-              </article>
-              <article class="material-summary-card">
-                <span>本阶段批次</span>
-                <strong>{{ activeMaterials.length }} 批</strong>
-              </article>
-              <article class="material-summary-card">
-                <span>全部物料</span>
-                <strong>{{ materials.length }} 批</strong>
-              </article>
-              <article class="material-summary-card">
-                <span>可落位目标区</span>
-                <strong>{{ assignableZones.length }} 个</strong>
-              </article>
-            </div>
-
-            <div v-if="activeMaterials.length" class="material-chip-grid">
+            <div class="material-action-grid">
               <button
-                v-for="material in activeMaterials"
-                :key="material.id"
                 type="button"
-                :class="['material-chip', { 'material-chip--active': material.id === selectedMaterialId }]"
-                @click="selectedMaterialId = material.id"
+                class="material-action-button"
+                @click="materialOverviewDialogOpen = true"
               >
-                <div class="material-chip__title">
-                  <span class="material-dot" :style="{ background: material.display_color || '#38bdf8' }" />
-                  <strong>{{ material.name }}</strong>
+                <div class="material-action-button__copy">
+                  <span>阶段概览</span>
+                  <strong>{{ activePhase?.name ?? "未设置阶段" }}</strong>
+                  <small>{{ activeMaterials.length }} 批物料 · {{ assignableZones.length }} 个目标区</small>
                 </div>
-                <p>{{ material.category }} · {{ formatMetric(material.weight_tons, 1) }} t</p>
-                <small>{{ material.batch_id || "未分批" }} · {{ zoneName(material.target_zone_id) }}</small>
+                <span class="section-toggle">弹窗查看</span>
               </button>
-            </div>
-            <article v-else class="empty-card empty-card--compact">
-              当前阶段还没有物料，可直接新增或导入模板批量填充。
-            </article>
 
-            <div v-if="selectedMaterial" class="editor-block">
-              <div class="editor-head">
-                <div>
-                  <p class="panel-kicker">Editor</p>
-                  <h3>{{ selectedMaterial.name }}</h3>
+              <button
+                type="button"
+                class="material-action-button"
+                @click="phaseMaterialsDialogOpen = true"
+              >
+                <div class="material-action-button__copy">
+                  <span>物料列表</span>
+                  <strong>本阶段待排布物料</strong>
+                  <small>{{ activeMaterials.length ? `${activeMaterials.length} 批可快速切换` : "当前阶段暂无物料" }}</small>
                 </div>
-                <span :class="['status-pill', selectedPlacement ? placementToneClass : 'status-pill--idle']">
-                  {{ selectedPlacement ? placementLabel : "未计算" }}
-                </span>
-              </div>
+                <span class="section-toggle">弹窗查看</span>
+              </button>
 
-              <div class="field-grid">
-                <label class="field-card field-card--full">
-                  <span>物料名称</span>
-                  <el-input v-model="selectedMaterial.name" class="ghost-input" />
-                </label>
-                <label class="field-card">
-                  <span>批次号</span>
-                  <el-input v-model="selectedMaterial.batch_id" class="ghost-input" />
-                </label>
-                <label class="field-card">
-                  <span>分类</span>
-                  <el-input v-model="selectedMaterial.category" class="ghost-input" />
-                </label>
-                <label class="field-card">
-                  <span>长度 (m)</span>
-                  <el-input-number
-                    v-model="selectedMaterial.length"
-                    :min="0.1"
-                    :step="0.1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card">
-                  <span>宽度 (m)</span>
-                  <el-input-number
-                    v-model="selectedMaterial.width"
-                    :min="0.1"
-                    :step="0.1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card">
-                  <span>高度 (m)</span>
-                  <el-input-number
-                    v-model="selectedMaterial.height"
-                    :min="0.1"
-                    :step="0.1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card">
-                  <span>重量 (t)</span>
-                  <el-input-number
-                    v-model="selectedMaterial.weight_tons"
-                    :min="0.1"
-                    :step="0.1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card">
-                  <span>周转频次</span>
-                  <el-input-number
-                    v-model="selectedMaterial.handling_frequency"
-                    :min="1"
-                    :step="1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card">
-                  <span>停留天数</span>
-                  <el-input-number
-                    v-model="selectedMaterial.stay_days"
-                    :min="1"
-                    :step="1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card">
-                  <span>优先级</span>
-                  <el-input-number
-                    v-model="selectedMaterial.priority_score"
-                    :min="0.2"
-                    :step="0.1"
-                    :controls="false"
-                    class="ghost-number"
-                  />
-                </label>
-                <label class="field-card field-card--full">
-                  <span>目标管控区</span>
-                  <el-select v-model="selectedMaterial.target_zone_id" class="ghost-select">
-                    <el-option
-                      v-for="zone in assignableZones"
-                      :key="zone.id"
-                      :label="zone.name"
-                      :value="zone.id"
-                    />
-                  </el-select>
-                </label>
-              </div>
-
-              <div class="editor-actions">
-                <span class="editor-footnote">{{ formatMaterialFootprint(selectedMaterial) }}</span>
-                <el-button text class="danger-button" @click="layoutStore.removeMaterial(selectedMaterial.id)">
-                  删除物料
-                </el-button>
-              </div>
+              <button
+                type="button"
+                class="material-action-button"
+                @click="openMaterialEditorDialog()"
+              >
+                <div class="material-action-button__copy">
+                  <span>当前编辑</span>
+                  <strong>{{ selectedMaterial?.name ?? "未选中物料" }}</strong>
+                  <small>{{ selectedMaterial ? formatMaterialFootprint(selectedMaterial) : "先从物料列表选择一批物料" }}</small>
+                </div>
+                <span class="section-toggle">弹窗查看</span>
+              </button>
             </div>
 
             <p v-if="error" class="panel-error">{{ error }}</p>
@@ -540,6 +427,195 @@
     </el-dialog>
 
     <el-dialog
+      v-model="materialOverviewDialogOpen"
+      title="本阶段概览"
+      class="material-dialog"
+      width="560px"
+      destroy-on-close
+    >
+      <section class="material-dialog-card">
+        <div class="material-summary-grid">
+          <article class="material-summary-card">
+            <span>当前阶段</span>
+            <strong>{{ activePhase?.name ?? "未设置" }}</strong>
+          </article>
+          <article class="material-summary-card">
+            <span>本阶段批次</span>
+            <strong>{{ activeMaterials.length }} 批</strong>
+          </article>
+          <article class="material-summary-card">
+            <span>全部物料</span>
+            <strong>{{ materials.length }} 批</strong>
+          </article>
+          <article class="material-summary-card">
+            <span>可落位目标区</span>
+            <strong>{{ assignableZones.length }} 个</strong>
+          </article>
+        </div>
+      </section>
+    </el-dialog>
+
+    <el-dialog
+      v-model="phaseMaterialsDialogOpen"
+      title="本阶段物料"
+      class="material-dialog"
+      width="760px"
+      destroy-on-close
+    >
+      <section class="material-dialog-card">
+        <p class="dialog-toolbar__meta">点击物料后直接进入编辑弹窗。</p>
+
+        <div v-if="activeMaterials.length" class="material-chip-grid material-chip-grid--dialog">
+          <button
+            v-for="material in activeMaterials"
+            :key="material.id"
+            type="button"
+            :class="['material-chip', { 'material-chip--active': material.id === selectedMaterialId }]"
+            @click="openMaterialEditorDialog(material.id)"
+          >
+            <div class="material-chip__title">
+              <span class="material-dot" :style="{ background: material.display_color || '#38bdf8' }" />
+              <strong>{{ material.name }}</strong>
+            </div>
+            <p>{{ material.category }} · {{ formatMetric(material.weight_tons, 1) }} t</p>
+            <small>{{ material.batch_id || "未分批" }} · {{ zoneName(material.target_zone_id) }}</small>
+          </button>
+        </div>
+        <article v-else class="empty-card empty-card--compact">
+          当前阶段还没有物料，可直接新增或导入模板批量填充。
+        </article>
+      </section>
+    </el-dialog>
+
+    <el-dialog
+      v-model="materialEditorDialogOpen"
+      title="当前编辑"
+      class="material-dialog"
+      width="860px"
+      destroy-on-close
+    >
+      <section class="material-dialog-card">
+        <div v-if="selectedMaterial" class="editor-block editor-block--dialog">
+          <div class="editor-head">
+            <div>
+              <p class="panel-kicker">Editor</p>
+              <h3>{{ selectedMaterial.name }}</h3>
+            </div>
+            <span :class="['status-pill', selectedPlacement ? placementToneClass : 'status-pill--idle']">
+              {{ selectedPlacement ? placementLabel : "未计算" }}
+            </span>
+          </div>
+
+          <div class="field-grid">
+            <label class="field-card field-card--full">
+              <span>物料名称</span>
+              <el-input v-model="selectedMaterial.name" class="ghost-input" />
+            </label>
+            <label class="field-card">
+              <span>批次号</span>
+              <el-input v-model="selectedMaterial.batch_id" class="ghost-input" />
+            </label>
+            <label class="field-card">
+              <span>分类</span>
+              <el-input v-model="selectedMaterial.category" class="ghost-input" />
+            </label>
+            <label class="field-card">
+              <span>长度 (m)</span>
+              <el-input-number
+                v-model="selectedMaterial.length"
+                :min="0.1"
+                :step="0.1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card">
+              <span>宽度 (m)</span>
+              <el-input-number
+                v-model="selectedMaterial.width"
+                :min="0.1"
+                :step="0.1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card">
+              <span>高度 (m)</span>
+              <el-input-number
+                v-model="selectedMaterial.height"
+                :min="0.1"
+                :step="0.1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card">
+              <span>重量 (t)</span>
+              <el-input-number
+                v-model="selectedMaterial.weight_tons"
+                :min="0.1"
+                :step="0.1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card">
+              <span>周转频次</span>
+              <el-input-number
+                v-model="selectedMaterial.handling_frequency"
+                :min="1"
+                :step="1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card">
+              <span>停留天数</span>
+              <el-input-number
+                v-model="selectedMaterial.stay_days"
+                :min="1"
+                :step="1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card">
+              <span>优先级</span>
+              <el-input-number
+                v-model="selectedMaterial.priority_score"
+                :min="0.2"
+                :step="0.1"
+                :controls="false"
+                class="ghost-number"
+              />
+            </label>
+            <label class="field-card field-card--full">
+              <span>目标管控区</span>
+              <el-select v-model="selectedMaterial.target_zone_id" class="ghost-select">
+                <el-option
+                  v-for="zone in assignableZones"
+                  :key="zone.id"
+                  :label="zone.name"
+                  :value="zone.id"
+                />
+              </el-select>
+            </label>
+          </div>
+
+          <div class="editor-actions">
+            <span class="editor-footnote">{{ formatMaterialFootprint(selectedMaterial) }}</span>
+            <el-button text class="danger-button" @click="layoutStore.removeMaterial(selectedMaterial.id)">
+              删除物料
+            </el-button>
+          </div>
+        </div>
+        <article v-else class="empty-card empty-card--compact">
+          先在“物料列表”弹窗中选择一批物料，再进入当前编辑。
+        </article>
+      </section>
+    </el-dialog>
+
+    <el-dialog
       v-model="stagePlanDialogOpen"
       :title="stagePlanFloatingLabel"
       class="stage-plan-dialog"
@@ -666,6 +742,9 @@ const decisionExpanded = ref(true);
 const actionsExpanded = ref(false);
 const versionsExpanded = ref(false);
 const allMaterialsDialogOpen = ref(false);
+const materialOverviewDialogOpen = ref(false);
+const phaseMaterialsDialogOpen = ref(false);
+const materialEditorDialogOpen = ref(false);
 const stagePlanDialogOpen = ref(false);
 const materialSearchKeyword = ref("");
 const materialImportInputRef = ref<HTMLInputElement | null>(null);
@@ -1053,6 +1132,17 @@ const openAllMaterialsDialog = () => {
   allMaterialsDialogOpen.value = true;
 };
 
+const openMaterialEditorDialog = (materialId?: string | null) => {
+  if (materialId) {
+    selectedMaterialId.value = materialId;
+  } else if (!selectedMaterialId.value && activeMaterials.value.length) {
+    selectedMaterialId.value = activeMaterials.value[0].id;
+  }
+
+  phaseMaterialsDialogOpen.value = false;
+  materialEditorDialogOpen.value = true;
+};
+
 const focusMaterial = (materialId: string, phaseId?: string | null) => {
   if (phaseId && phaseId !== activePhaseId.value) {
     layoutStore.setActivePhase(phaseId);
@@ -1379,6 +1469,13 @@ onMounted(() => {
 .panel--right {
   gap: 12px;
   padding: 12px;
+}
+
+.panel--left {
+  overflow: hidden;
+}
+
+.panel--right {
   overflow: auto;
 }
 
@@ -1475,6 +1572,50 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.material-action-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.material-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(146, 181, 205, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--app-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.material-action-button:hover {
+  border-color: rgba(56, 189, 248, 0.24);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.material-action-button__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.material-action-button__copy span,
+.material-action-button__copy small {
+  color: var(--app-text-secondary);
+}
+
+.material-action-button__copy span {
+  font-size: 12px;
+}
+
+.material-action-button__copy strong {
+  color: var(--app-text-primary);
+}
+
 .material-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1495,9 +1636,13 @@ onMounted(() => {
 
 .material-chip-grid {
   grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
-  max-height: 300px;
+  max-height: 260px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.material-chip-grid--dialog {
+  max-height: none;
 }
 
 .action-list,
@@ -1564,6 +1709,14 @@ onMounted(() => {
   gap: 12px;
   padding: 14px;
   overflow: auto;
+}
+
+.editor-block {
+  max-height: 380px;
+}
+
+.editor-block--dialog {
+  max-height: none;
 }
 
 .editor-head {
@@ -1784,6 +1937,15 @@ onMounted(() => {
   border: 1px solid rgba(146, 181, 205, 0.12);
 }
 
+.material-dialog-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(146, 181, 205, 0.12);
+  border-radius: 24px;
+  background: rgba(5, 14, 24, 0.72);
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1898,18 +2060,21 @@ onMounted(() => {
   background: rgba(148, 163, 184, 0.12);
 }
 
+:deep(.material-dialog .el-dialog),
 :deep(.stage-plan-dialog .el-dialog) {
-  max-width: 560px;
   border-radius: 24px;
   background: rgba(8, 18, 28, 0.96);
   box-shadow: var(--panel-shadow);
 }
 
+:deep(.material-dialog .el-dialog__header),
+:deep(.material-dialog .el-dialog__body),
 :deep(.stage-plan-dialog .el-dialog__header),
 :deep(.stage-plan-dialog .el-dialog__body) {
   padding-inline: 20px;
 }
 
+:deep(.material-dialog .el-dialog__title),
 :deep(.stage-plan-dialog .el-dialog__title) {
   color: var(--app-text-primary);
 }
