@@ -567,6 +567,13 @@ export const useLayoutStore = defineStore("layout", {
         this.phaseControlZones.find((zone) => !zone.blocking && zone.zone_type === "staging")?.id ?? null;
       this.materials.push(createDefaultMaterial(this.materials.length, this.activePhaseId, targetZoneId));
     },
+    appendImportedMaterials(materials: MaterialModel[]) {
+      if (!materials.length) {
+        return;
+      }
+
+      this.materials = normalizeMaterials([...this.materials, ...materials]);
+    },
     removeMaterial(id: string) {
       if (this.materials.length === 1) {
         return;

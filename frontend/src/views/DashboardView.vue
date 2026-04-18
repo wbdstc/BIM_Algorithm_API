@@ -83,151 +83,225 @@
           <button type="button" class="rail-button rail-button--primary" @click="leftPanelOpen = true">
             左栏
           </button>
-          <button type="button" class="rail-button" @click="leftPanelOpen = true; phaseExpanded = true">
-            阶段
-          </button>
-          <button type="button" class="rail-button" @click="leftPanelOpen = true; materialsExpanded = true">
+          <button type="button" class="rail-button" @click="leftPanelOpen = true">
             物料
+          </button>
+          <button type="button" class="rail-button" @click="openAllMaterialsDialog">
+            全部
           </button>
         </div>
 
         <template v-else>
-        <section class="panel-section">
-          <div class="panel-head panel-head--button" @click="phaseExpanded = !phaseExpanded">
-            <div>
-              <p class="panel-kicker">Phase</p>
-              <h2>阶段计划</h2>
-            </div>
-            <span class="section-toggle">{{ phaseExpanded ? "收起" : "展开" }}</span>
-          </div>
-
-          <div v-show="phaseExpanded" class="phase-list">
-            <button
-              v-for="phase in phases"
-              :key="phase.id"
-              type="button"
-              :class="['phase-card', { 'phase-card--active': phase.id === activePhaseId }]"
-              @click="layoutStore.setActivePhase(phase.id)"
+          <section class="panel-section panel-section--fill">
+            <input
+              ref="materialImportInputRef"
+              class="visually-hidden"
+              type="file"
+              accept=".csv,text/csv"
+              @change="handleMaterialImport"
             >
-              <div class="phase-card__head">
-                <strong>{{ phase.sequence }}. {{ phase.name }}</strong>
-                <span class="phase-badge">{{ phase.status }}</span>
+
+            <div class="panel-head">
+              <div class="panel-head__copy">
+                <p class="panel-kicker">Materials</p>
+                <h2>本阶段物料</h2>
+                <p class="panel-head__subtitle">{{ activePhase?.name ?? "未设置阶段" }}</p>
               </div>
-              <p>{{ phase.objective || "暂无阶段目标" }}</p>
-              <small v-if="phase.start_day && phase.end_day">第 {{ phase.start_day }} - {{ phase.end_day }} 天</small>
-            </button>
-          </div>
-        </section>
-
-        <section class="panel-section panel-section--fill">
-          <div class="panel-head panel-head--button" @click="materialsExpanded = !materialsExpanded">
-            <div>
-              <p class="panel-kicker">Materials</p>
-              <h2>本阶段物料</h2>
+              <span :class="['status-pill', phaseStatusToneClass]">
+                {{ phaseStatusText(activePhase?.status) }}
+              </span>
             </div>
 
-            <el-button class="utility-button" @click.stop="layoutStore.addMaterial">
-              新增物料
-            </el-button>
-            <span class="section-toggle">{{ materialsExpanded ? "收起" : "展开" }}</span>
-          </div>
+            <div class="material-toolbar">
+              <el-button class="utility-button" @click="layoutStore.addMaterial">
+                新增物料
+              </el-button>
+              <el-button class="utility-button" @click="openAllMaterialsDialog">
+                全部物料
+              </el-button>
+              <el-button class="utility-button" @click="openMaterialImport">
+                一键导入
+              </el-button>
+              <el-button class="utility-button" @click="downloadMaterialTemplate">
+                示例模板
+              </el-button>
+            </div>
 
-          <div v-show="materialsExpanded" class="material-list">
-            <button
-              v-for="material in activeMaterials"
-              :key="material.id"
-              type="button"
-              :class="['material-card', { 'material-card--active': material.id === selectedMaterialId }]"
-              @click="selectedMaterialId = material.id"
-            >
-              <div class="material-card__head">
-                <div class="material-label">
+            <p class="toolbar-hint">
+              导入支持 CSV；未填写阶段和目标区时，默认写入当前阶段并自动匹配可落位区域。
+            </p>
+
+            <div class="material-summary-grid">
+              <article class="material-summary-card">
+                <span>当前阶段</span>
+                <strong>{{ activePhase?.name ?? "未设置" }}</strong>
+              </article>
+              <article class="material-summary-card">
+                <span>本阶段批次</span>
+                <strong>{{ activeMaterials.length }} 批</strong>
+              </article>
+              <article class="material-summary-card">
+                <span>全部物料</span>
+                <strong>{{ materials.length }} 批</strong>
+              </article>
+              <article class="material-summary-card">
+                <span>可落位目标区</span>
+                <strong>{{ assignableZones.length }} 个</strong>
+              </article>
+            </div>
+
+            <div v-if="activeMaterials.length" class="material-chip-grid">
+              <button
+                v-for="material in activeMaterials"
+                :key="material.id"
+                type="button"
+                :class="['material-chip', { 'material-chip--active': material.id === selectedMaterialId }]"
+                @click="selectedMaterialId = material.id"
+              >
+                <div class="material-chip__title">
                   <span class="material-dot" :style="{ background: material.display_color || '#38bdf8' }" />
                   <strong>{{ material.name }}</strong>
                 </div>
-                <span class="material-batch">{{ material.batch_id || "未分批" }}</span>
+                <p>{{ material.category }} · {{ formatMetric(material.weight_tons, 1) }} t</p>
+                <small>{{ material.batch_id || "未分批" }} · {{ zoneName(material.target_zone_id) }}</small>
+              </button>
+            </div>
+            <article v-else class="empty-card empty-card--compact">
+              当前阶段还没有物料，可直接新增或导入模板批量填充。
+            </article>
+
+            <div v-if="selectedMaterial" class="editor-block">
+              <div class="editor-head">
+                <div>
+                  <p class="panel-kicker">Editor</p>
+                  <h3>{{ selectedMaterial.name }}</h3>
+                </div>
+                <span :class="['status-pill', selectedPlacement ? placementToneClass : 'status-pill--idle']">
+                  {{ selectedPlacement ? placementLabel : "未计算" }}
+                </span>
               </div>
-              <p>{{ material.category }} · {{ formatMetric(material.weight_tons, 1) }} t · {{ formatMetric(material.stay_days, 0) }} 天</p>
-              <small>{{ zoneName(material.target_zone_id) }}</small>
-            </button>
-          </div>
 
-          <div v-if="materialsExpanded && selectedMaterial" class="editor-block">
-            <div class="editor-head">
-              <p class="panel-kicker">Editor</p>
-              <h3>{{ selectedMaterial.name }}</h3>
-            </div>
-
-            <div class="field-grid">
-              <label class="field-card field-card--full">
-                <span>物料名称</span>
-                <el-input v-model="selectedMaterial.name" class="ghost-input" />
-              </label>
-              <label class="field-card">
-                <span>批次号</span>
-                <el-input v-model="selectedMaterial.batch_id" class="ghost-input" />
-              </label>
-              <label class="field-card">
-                <span>分类</span>
-                <el-input v-model="selectedMaterial.category" class="ghost-input" />
-              </label>
-              <label class="field-card">
-                <span>重量 (t)</span>
-                <el-input-number
-                  v-model="selectedMaterial.weight_tons"
-                  :min="0.1"
-                  :step="0.1"
-                  :controls="false"
-                  class="ghost-number"
-                />
-              </label>
-              <label class="field-card">
-                <span>停留天数</span>
-                <el-input-number
-                  v-model="selectedMaterial.stay_days"
-                  :min="1"
-                  :step="1"
-                  :controls="false"
-                  class="ghost-number"
-                />
-              </label>
-              <label class="field-card">
-                <span>优先级</span>
-                <el-input-number
-                  v-model="selectedMaterial.priority_score"
-                  :min="0.2"
-                  :step="0.1"
-                  :controls="false"
-                  class="ghost-number"
-                />
-              </label>
-              <label class="field-card field-card--full">
-                <span>目标管控区</span>
-                <el-select v-model="selectedMaterial.target_zone_id" class="ghost-select">
-                  <el-option
-                    v-for="zone in assignableZones"
-                    :key="zone.id"
-                    :label="zone.name"
-                    :value="zone.id"
+              <div class="field-grid">
+                <label class="field-card field-card--full">
+                  <span>物料名称</span>
+                  <el-input v-model="selectedMaterial.name" class="ghost-input" />
+                </label>
+                <label class="field-card">
+                  <span>批次号</span>
+                  <el-input v-model="selectedMaterial.batch_id" class="ghost-input" />
+                </label>
+                <label class="field-card">
+                  <span>分类</span>
+                  <el-input v-model="selectedMaterial.category" class="ghost-input" />
+                </label>
+                <label class="field-card">
+                  <span>长度 (m)</span>
+                  <el-input-number
+                    v-model="selectedMaterial.length"
+                    :min="0.1"
+                    :step="0.1"
+                    :controls="false"
+                    class="ghost-number"
                   />
-                </el-select>
-              </label>
+                </label>
+                <label class="field-card">
+                  <span>宽度 (m)</span>
+                  <el-input-number
+                    v-model="selectedMaterial.width"
+                    :min="0.1"
+                    :step="0.1"
+                    :controls="false"
+                    class="ghost-number"
+                  />
+                </label>
+                <label class="field-card">
+                  <span>高度 (m)</span>
+                  <el-input-number
+                    v-model="selectedMaterial.height"
+                    :min="0.1"
+                    :step="0.1"
+                    :controls="false"
+                    class="ghost-number"
+                  />
+                </label>
+                <label class="field-card">
+                  <span>重量 (t)</span>
+                  <el-input-number
+                    v-model="selectedMaterial.weight_tons"
+                    :min="0.1"
+                    :step="0.1"
+                    :controls="false"
+                    class="ghost-number"
+                  />
+                </label>
+                <label class="field-card">
+                  <span>周转频次</span>
+                  <el-input-number
+                    v-model="selectedMaterial.handling_frequency"
+                    :min="1"
+                    :step="1"
+                    :controls="false"
+                    class="ghost-number"
+                  />
+                </label>
+                <label class="field-card">
+                  <span>停留天数</span>
+                  <el-input-number
+                    v-model="selectedMaterial.stay_days"
+                    :min="1"
+                    :step="1"
+                    :controls="false"
+                    class="ghost-number"
+                  />
+                </label>
+                <label class="field-card">
+                  <span>优先级</span>
+                  <el-input-number
+                    v-model="selectedMaterial.priority_score"
+                    :min="0.2"
+                    :step="0.1"
+                    :controls="false"
+                    class="ghost-number"
+                  />
+                </label>
+                <label class="field-card field-card--full">
+                  <span>目标管控区</span>
+                  <el-select v-model="selectedMaterial.target_zone_id" class="ghost-select">
+                    <el-option
+                      v-for="zone in assignableZones"
+                      :key="zone.id"
+                      :label="zone.name"
+                      :value="zone.id"
+                    />
+                  </el-select>
+                </label>
+              </div>
+
+              <div class="editor-actions">
+                <span class="editor-footnote">{{ formatMaterialFootprint(selectedMaterial) }}</span>
+                <el-button text class="danger-button" @click="layoutStore.removeMaterial(selectedMaterial.id)">
+                  删除物料
+                </el-button>
+              </div>
             </div>
 
-            <div class="editor-actions">
-              <el-button text class="danger-button" @click="layoutStore.removeMaterial(selectedMaterial.id)">
-                删除物料
-              </el-button>
-            </div>
-          </div>
-        </section>
-
-        <p v-if="error" class="panel-error">{{ error }}</p>
+            <p v-if="error" class="panel-error">{{ error }}</p>
+          </section>
         </template>
       </aside>
 
       <main class="panel panel--canvas">
-        <CanvasMap :highlight-material-id="selectedMaterialId" />
+        <div class="canvas-frame">
+          <CanvasMap :highlight-material-id="selectedMaterialId" />
+
+          <button
+            type="button"
+            class="stage-plan-float"
+            @click="stagePlanDialogOpen = true"
+          >
+            {{ stagePlanFloatingLabel }}
+          </button>
+        </div>
       </main>
 
       <aside :class="['panel panel--right', { 'panel--collapsed': !rightPanelOpen }]">
@@ -244,160 +318,328 @@
         </div>
 
         <template v-else>
-        <section class="panel-section">
-          <div class="panel-head panel-head--button" @click="resultExpanded = !resultExpanded">
-            <div>
-              <p class="panel-kicker">Result</p>
-              <h2>阶段结论</h2>
+          <section class="panel-section">
+            <div class="panel-head panel-head--button" @click="resultExpanded = !resultExpanded">
+              <div>
+                <p class="panel-kicker">Result</p>
+                <h2>阶段结论</h2>
+              </div>
+              <span class="section-toggle">{{ resultExpanded ? "收起" : "展开" }}</span>
             </div>
-            <span class="section-toggle">{{ resultExpanded ? "收起" : "展开" }}</span>
-          </div>
 
-          <div v-show="resultExpanded" class="summary-grid">
-            <article class="summary-card summary-card--primary">
-              <span>落位完成度</span>
-              <strong>{{ currentResult ? `${placementRate}%` : "--" }}</strong>
-              <p>{{ currentResult?.metrics.placed_count ?? 0 }} / {{ activeMaterials.length }} 批</p>
-            </article>
-            <article class="summary-card">
-              <span>运输成本</span>
-              <strong>{{ currentResult ? formatMetric(currentResult.metrics.transport_cost, 1) : "--" }}</strong>
-            </article>
-            <article class="summary-card">
-              <span>安全罚分</span>
-              <strong>{{ currentResult ? formatMetric(currentResult.metrics.safety_penalty, 1) : "--" }}</strong>
-            </article>
-            <article class="summary-card">
-              <span>目标区命中</span>
-              <strong>{{ currentResult ? `${currentResult.metrics.in_target_zone_count} 批` : "--" }}</strong>
-            </article>
-          </div>
-        </section>
-
-        <section class="panel-section panel-section--fill">
-          <div class="panel-head panel-head--button" @click="decisionExpanded = !decisionExpanded">
-            <div>
-              <p class="panel-kicker">Decision</p>
-              <h2>选中物料解释</h2>
+            <div v-show="resultExpanded" class="summary-grid">
+              <article class="summary-card summary-card--primary">
+                <span>落位完成度</span>
+                <strong>{{ currentResult ? `${placementRate}%` : "--" }}</strong>
+                <p>{{ currentResult?.metrics.placed_count ?? 0 }} / {{ activeMaterials.length }} 批</p>
+              </article>
+              <article class="summary-card">
+                <span>运输成本</span>
+                <strong>{{ currentResult ? formatMetric(currentResult.metrics.transport_cost, 1) : "--" }}</strong>
+              </article>
+              <article class="summary-card">
+                <span>安全罚分</span>
+                <strong>{{ currentResult ? formatMetric(currentResult.metrics.safety_penalty, 1) : "--" }}</strong>
+              </article>
+              <article class="summary-card">
+                <span>目标区命中</span>
+                <strong>{{ currentResult ? `${currentResult.metrics.in_target_zone_count} 批` : "--" }}</strong>
+              </article>
             </div>
-            <span class="section-toggle">{{ decisionExpanded ? "收起" : "展开" }}</span>
-          </div>
+          </section>
 
-          <template v-if="decisionExpanded && selectedPlacement">
-            <div class="decision-card">
-              <div class="decision-head">
-                <div>
-                  <strong>{{ selectedPlacement.material_name }}</strong>
-                  <p>{{ selectedPlacement.batch_id || "未分批" }} · {{ selectedPlacement.assigned_crane_name || "未分配塔吊" }}</p>
+          <section class="panel-section panel-section--fill">
+            <div class="panel-head panel-head--button" @click="decisionExpanded = !decisionExpanded">
+              <div>
+                <p class="panel-kicker">Decision</p>
+                <h2>选中物料解释</h2>
+              </div>
+              <span class="section-toggle">{{ decisionExpanded ? "收起" : "展开" }}</span>
+            </div>
+
+            <template v-if="decisionExpanded && selectedPlacement">
+              <div class="decision-card">
+                <div class="decision-head">
+                  <div>
+                    <strong>{{ selectedPlacement.material_name }}</strong>
+                    <p>{{ selectedPlacement.batch_id || "未分批" }} · {{ selectedPlacement.assigned_crane_name || "未分配塔吊" }}</p>
+                  </div>
+                  <span :class="['status-pill', placementToneClass]">{{ placementLabel }}</span>
                 </div>
-                <span :class="['status-pill', placementToneClass]">{{ placementLabel }}</span>
-              </div>
 
-              <p class="decision-note">{{ selectedPlacement.decision_note }}</p>
+                <p class="decision-note">{{ selectedPlacement.decision_note }}</p>
 
-              <div class="tag-list">
-                <span
-                  v-for="factor in selectedPlacement.decision_factors"
-                  :key="`${factor.label}-${factor.value}`"
-                  :class="['decision-tag', `decision-tag--${factor.tone}`]"
-                >
-                  {{ factor.label }} · {{ factor.value }}
-                </span>
-              </div>
-
-              <div class="subsection">
-                <h3>塔吊方案</h3>
-                <div class="option-list">
-                  <article
-                    v-for="option in selectedPlacement.crane_options"
-                    :key="option.crane_id"
-                    :class="['option-card', { 'option-card--muted': !option.reachable }]"
+                <div class="tag-list">
+                  <span
+                    v-for="factor in selectedPlacement.decision_factors"
+                    :key="`${factor.label}-${factor.value}`"
+                    :class="['decision-tag', `decision-tag--${factor.tone}`]"
                   >
-                    <div class="option-card__head">
-                      <strong>{{ option.crane_name }}</strong>
-                      <span>{{ option.reachable ? "可达" : "不可达" }}</span>
-                    </div>
-                    <p>{{ option.reason }}</p>
-                    <small>
-                      {{ option.distance != null ? `${formatMetric(option.distance, 1)} m` : "--" }}
-                      ·
-                      {{ option.estimated_cost != null ? formatMetric(option.estimated_cost, 1) : "--" }}
-                    </small>
-                  </article>
+                    {{ factor.label }} · {{ factor.value }}
+                  </span>
+                </div>
+
+                <div class="subsection">
+                  <h3>塔吊方案</h3>
+                  <div class="option-list">
+                    <article
+                      v-for="option in selectedPlacement.crane_options"
+                      :key="option.crane_id"
+                      :class="['option-card', { 'option-card--muted': !option.reachable }]"
+                    >
+                      <div class="option-card__head">
+                        <strong>{{ option.crane_name }}</strong>
+                        <span>{{ option.reachable ? "可达" : "不可达" }}</span>
+                      </div>
+                      <p>{{ option.reason }}</p>
+                      <small>
+                        {{ option.distance != null ? `${formatMetric(option.distance, 1)} m` : "--" }}
+                        ·
+                        {{ option.estimated_cost != null ? formatMetric(option.estimated_cost, 1) : "--" }}
+                      </small>
+                    </article>
+                  </div>
                 </div>
               </div>
-            </div>
-          </template>
+            </template>
 
-          <el-empty
-            v-else-if="decisionExpanded"
-            description="先选择一个本阶段物料，并执行一次场布计算。"
-          />
-        </section>
+            <el-empty
+              v-else-if="decisionExpanded"
+              description="先选择一个本阶段物料，并执行一次场布计算。"
+            />
+          </section>
 
-        <section class="panel-section">
-          <div class="panel-head panel-head--button" @click="actionsExpanded = !actionsExpanded">
-            <div>
-              <p class="panel-kicker">Actions</p>
-              <h2>待办动作</h2>
-            </div>
-            <span class="section-toggle">{{ actionsExpanded ? "收起" : "展开" }}</span>
-          </div>
-
-          <div v-if="actionsExpanded && currentResult?.metrics.action_items.length" class="action-list">
-            <article
-              v-for="item in currentResult.metrics.action_items"
-              :key="item.id"
-              :class="['action-card', `action-card--${item.severity}`]"
-            >
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.detail }}</p>
-            </article>
-          </div>
-          <article v-else-if="actionsExpanded" class="empty-card">
-            当前阶段暂无系统建议动作。
-          </article>
-        </section>
-
-        <section class="panel-section">
-          <div class="panel-head panel-head--button" @click="versionsExpanded = !versionsExpanded">
-            <div>
-              <p class="panel-kicker">Versions</p>
-              <h2>方案留痕</h2>
-            </div>
-            <span class="section-toggle">{{ versionsExpanded ? "收起" : "展开" }}</span>
-          </div>
-
-          <div v-if="versionsExpanded && phaseVersions.length" class="version-list">
-            <article v-for="version in phaseVersions" :key="version.version_id" class="version-card">
-              <div class="version-card__head">
-                <strong>{{ version.version_label }}</strong>
-                <span>{{ version.phase_name || "全部阶段" }}</span>
+          <section class="panel-section">
+            <div class="panel-head panel-head--button" @click="actionsExpanded = !actionsExpanded">
+              <div>
+                <p class="panel-kicker">Actions</p>
+                <h2>待办动作</h2>
               </div>
-              <p>{{ formatTimestamp(version.created_at) }}</p>
-              <small>
-                成本 {{ formatMetric(version.total_cost, 1) }} ·
-                {{ version.placed_count }}/{{ version.placed_count + version.unplaced_count }} 批
-              </small>
+              <span class="section-toggle">{{ actionsExpanded ? "收起" : "展开" }}</span>
+            </div>
+
+            <div v-if="actionsExpanded && currentResult?.metrics.action_items.length" class="action-list">
+              <article
+                v-for="item in currentResult.metrics.action_items"
+                :key="item.id"
+                :class="['action-card', `action-card--${item.severity}`]"
+              >
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.detail }}</p>
+              </article>
+            </div>
+            <article v-else-if="actionsExpanded" class="empty-card">
+              当前阶段暂无系统建议动作。
             </article>
-          </div>
-          <article v-else-if="versionsExpanded" class="empty-card">
-            还没有该阶段的计算版本。
-          </article>
-        </section>
+          </section>
+
+          <section class="panel-section">
+            <div class="panel-head panel-head--button" @click="versionsExpanded = !versionsExpanded">
+              <div>
+                <p class="panel-kicker">Versions</p>
+                <h2>方案留痕</h2>
+              </div>
+              <span class="section-toggle">{{ versionsExpanded ? "收起" : "展开" }}</span>
+            </div>
+
+            <div v-if="versionsExpanded && phaseVersions.length" class="version-list">
+              <article v-for="version in phaseVersions" :key="version.version_id" class="version-card">
+                <div class="version-card__head">
+                  <strong>{{ version.version_label }}</strong>
+                  <span>{{ version.phase_name || "全部阶段" }}</span>
+                </div>
+                <p>{{ formatTimestamp(version.created_at) }}</p>
+                <small>
+                  成本 {{ formatMetric(version.total_cost, 1) }} ·
+                  {{ version.placed_count }}/{{ version.placed_count + version.unplaced_count }} 批
+                </small>
+              </article>
+            </div>
+            <article v-else-if="versionsExpanded" class="empty-card">
+              还没有该阶段的计算版本。
+            </article>
+          </section>
         </template>
       </aside>
     </div>
+
+    <el-dialog
+      v-model="allMaterialsDialogOpen"
+      title="全部物料总览"
+      class="all-materials-dialog"
+      width="92%"
+      destroy-on-close
+    >
+      <div class="dialog-toolbar">
+        <el-input
+          v-model="materialSearchKeyword"
+          class="ghost-input dialog-search"
+          placeholder="搜索物料、批次、阶段或目标区"
+          clearable
+        />
+        <p class="dialog-toolbar__meta">
+          共 {{ materials.length }} 批，当前筛选 {{ filteredMaterials.length }} 批
+        </p>
+      </div>
+
+      <div class="table-shell">
+        <el-table
+          :data="filteredMaterials"
+          row-key="id"
+          height="460"
+          stripe
+          class="table-inline"
+          empty-text="没有匹配的物料"
+        >
+          <el-table-column label="物料" min-width="200">
+            <template #default="{ row }">
+              <div class="dialog-material-cell">
+                <div class="material-label">
+                  <span class="material-dot" :style="{ background: row.display_color || '#38bdf8' }" />
+                  <strong>{{ row.name }}</strong>
+                </div>
+                <small>{{ row.batch_id || "未分批" }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="阶段" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ phaseName(row.phase_id) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="category" label="分类" min-width="110" show-overflow-tooltip />
+          <el-table-column label="规格" min-width="160">
+            <template #default="{ row }">
+              {{ formatMaterialFootprint(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="重量" min-width="100">
+            <template #default="{ row }">
+              {{ formatMetric(row.weight_tons, 1) }} t
+            </template>
+          </el-table-column>
+          <el-table-column label="停留" min-width="96">
+            <template #default="{ row }">
+              {{ formatMetric(row.stay_days, 0) }} 天
+            </template>
+          </el-table-column>
+          <el-table-column label="目标区" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ zoneName(row.target_zone_id) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="88" fixed="right">
+            <template #default="{ row }">
+              <el-button text class="utility-button utility-button--text" @click="focusMaterial(row.id, row.phase_id)">
+                定位
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="stagePlanDialogOpen"
+      :title="stagePlanFloatingLabel"
+      class="stage-plan-dialog"
+      width="560px"
+      destroy-on-close
+    >
+      <section class="stage-plan-dialog-card">
+        <p class="panel-kicker">Stage Plan</p>
+        <div class="canvas-stage-plan__head">
+          <div>
+            <h2>{{ activePhase ? `${activePhase.sequence}. ${activePhase.name}` : "阶段详细计划" }}</h2>
+            <p>{{ phaseTimelineLabel }}</p>
+          </div>
+          <span :class="['status-pill', phaseStatusToneClass]">
+            {{ phaseStatusText(activePhase?.status) }}
+          </span>
+        </div>
+
+        <p class="canvas-stage-plan__objective">
+          {{ activePhase?.objective || "围绕当前阶段材料、道路净空与塔吊效率生成可执行场布。" }}
+        </p>
+
+        <div class="canvas-stage-plan__metrics">
+          <article class="canvas-stage-plan__metric">
+            <span>本阶段物料</span>
+            <strong>{{ activeMaterials.length }} 批</strong>
+          </article>
+          <article class="canvas-stage-plan__metric">
+            <span>可落位区域</span>
+            <strong>{{ assignableZones.length }} 个</strong>
+          </article>
+          <article class="canvas-stage-plan__metric">
+            <span>道路/通道约束</span>
+            <strong>{{ blockingZoneCount }} 处</strong>
+          </article>
+          <article class="canvas-stage-plan__metric">
+            <span>高优先级物料</span>
+            <strong>{{ highPriorityMaterialCount }} 批</strong>
+          </article>
+        </div>
+
+        <div class="canvas-stage-plan__facts">
+          <article
+            v-for="fact in stagePlanFacts"
+            :key="fact.label"
+            class="canvas-stage-plan__fact"
+          >
+            <span>{{ fact.label }}</span>
+            <strong>{{ fact.value }}</strong>
+          </article>
+        </div>
+      </section>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { storeToRefs } from "pinia";
 
 import CanvasMap from "../components/CanvasMap.vue";
-import type { PlacementResult } from "../types/layout";
+import type { MaterialModel, PlacementResult } from "../types/layout";
 import { useLayoutStore } from "../stores/layout";
+
+const MATERIAL_TEMPLATE_HEADERS = [
+  "name",
+  "category",
+  "length",
+  "width",
+  "height",
+  "weight_tons",
+  "handling_frequency",
+  "stay_days",
+  "priority_score",
+  "batch_id",
+  "target_zone_id",
+  "phase_id",
+  "notes",
+  "display_color",
+] as const;
+
+type MaterialCsvField = (typeof MATERIAL_TEMPLATE_HEADERS)[number];
+
+const MATERIAL_HEADER_ALIASES: Record<MaterialCsvField, readonly string[]> = {
+  name: ["name", "material_name", "物料名称", "名称"],
+  category: ["category", "分类"],
+  length: ["length", "len", "l", "长度"],
+  width: ["width", "w", "宽度"],
+  height: ["height", "h", "高度"],
+  weight_tons: ["weight_tons", "weight", "重量", "重量_t", "重量t"],
+  handling_frequency: ["handling_frequency", "frequency", "handling", "搬运频次", "周转频次"],
+  stay_days: ["stay_days", "stay", "停留天数", "停留"],
+  priority_score: ["priority_score", "priority", "优先级"],
+  batch_id: ["batch_id", "batch", "批次号", "批次"],
+  target_zone_id: ["target_zone_id", "zone_id", "目标区", "目标管控区"],
+  phase_id: ["phase_id", "phase", "阶段", "阶段id"],
+  notes: ["notes", "remark", "备注"],
+  display_color: ["display_color", "color", "颜色"],
+};
 
 const layoutStore = useLayoutStore();
 const {
@@ -408,6 +650,7 @@ const {
   error,
   hasResult,
   loading,
+  materials,
   optimizationResult,
   phaseControlZones,
   phases,
@@ -418,12 +661,14 @@ const {
 const selectedMaterialId = ref<string | null>(null);
 const leftPanelOpen = ref(true);
 const rightPanelOpen = ref(false);
-const phaseExpanded = ref(true);
-const materialsExpanded = ref(true);
 const resultExpanded = ref(true);
 const decisionExpanded = ref(true);
 const actionsExpanded = ref(false);
 const versionsExpanded = ref(false);
+const allMaterialsDialogOpen = ref(false);
+const stagePlanDialogOpen = ref(false);
+const materialSearchKeyword = ref("");
+const materialImportInputRef = ref<HTMLInputElement | null>(null);
 
 const formatMetric = (value: number, digits = 0) =>
   new Intl.NumberFormat("zh-CN", {
@@ -438,6 +683,28 @@ const formatTimestamp = (value: string) =>
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+
+const phaseStatusText = (status?: string | null) => {
+  if (status === "active") {
+    return "进行中";
+  }
+  if (status === "planned") {
+    return "待执行";
+  }
+  if (status === "completed") {
+    return "已完成";
+  }
+  return status || "未设置";
+};
+
+const phaseName = (phaseId?: string | null) =>
+  phases.value.find((phase) => phase.id === phaseId)?.name ?? "未分配阶段";
+
+const zoneName = (zoneId?: string | null) =>
+  controlZones.value.find((zone) => zone.id === zoneId)?.name ?? "未绑定目标区";
+
+const formatMaterialFootprint = (material: MaterialModel) =>
+  `${formatMetric(material.length, 1)} × ${formatMetric(material.width, 1)} × ${formatMetric(material.height, 1)} m`;
 
 const currentResult = computed(() =>
   hasResult.value ? optimizationResult.value : null,
@@ -485,6 +752,10 @@ const reportToneClass = computed(() => {
   return currentResult.value.metrics.feasible_layout ? "status-pill--success" : "status-pill--warning";
 });
 
+const phaseStatusToneClass = computed(() =>
+  activePhase.value?.status === "active" ? "status-pill--running" : "status-pill--idle",
+);
+
 const placementRate = computed(() => {
   if (!activeMaterials.value.length || !currentResult.value) {
     return 0;
@@ -529,23 +800,368 @@ const phaseVersions = computed(() =>
   recentPlanVersions.value.filter((version) => version.phase_id === activePhaseId.value),
 );
 
-const zoneName = (zoneId?: string | null) =>
-  controlZones.value.find((zone) => zone.id === zoneId)?.name ?? "未绑定目标区";
+const phaseSequenceMap = computed(
+  () => new Map(phases.value.map((phase) => [phase.id, phase.sequence])),
+);
+
+const allMaterialsSorted = computed(() =>
+  [...materials.value].sort((left, right) => {
+    const leftOrder = phaseSequenceMap.value.get(left.phase_id ?? "") ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = phaseSequenceMap.value.get(right.phase_id ?? "") ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.name.localeCompare(right.name, "zh-CN");
+  }),
+);
+
+const filteredMaterials = computed(() => {
+  const keyword = materialSearchKeyword.value.trim().toLowerCase();
+  if (!keyword) {
+    return allMaterialsSorted.value;
+  }
+
+  return allMaterialsSorted.value.filter((material) =>
+    [
+      material.name,
+      material.batch_id,
+      material.category,
+      material.notes,
+      phaseName(material.phase_id),
+      zoneName(material.target_zone_id),
+    ].some((value) => value?.toLowerCase().includes(keyword)),
+  );
+});
+
+const phaseTimelineLabel = computed(() => {
+  if (!activePhase.value) {
+    return "时间窗口待配置";
+  }
+  if (activePhase.value.start_day != null && activePhase.value.end_day != null) {
+    return `第 ${activePhase.value.start_day} - ${activePhase.value.end_day} 天`;
+  }
+  if (activePhase.value.start_day != null) {
+    return `第 ${activePhase.value.start_day} 天起`;
+  }
+  if (activePhase.value.end_day != null) {
+    return `截至第 ${activePhase.value.end_day} 天`;
+  }
+  return "时间窗口待配置";
+});
+
+const stagePlanFloatingLabel = computed(() =>
+  `${activePhase.value?.name ?? "当前阶段"}详细计划`,
+);
+
+const highPriorityMaterialCount = computed(() =>
+  activeMaterials.value.filter((material) => material.priority_score >= 1.2).length,
+);
+
+const blockingZoneCount = computed(() =>
+  phaseControlZones.value.filter((zone) => zone.blocking).length,
+);
+
+const stagePlanFacts = computed(() => {
+  const assignableZoneNames = assignableZones.value.map((zone) => zone.name);
+  const blockingZoneNames = phaseControlZones.value.filter((zone) => zone.blocking).map((zone) => zone.name);
+
+  return [
+    {
+      label: "目标区安排",
+      value: assignableZoneNames.length
+        ? assignableZoneNames.slice(0, 3).join("、")
+        : "当前阶段暂无可落位的目标区",
+    },
+    {
+      label: "净空要求",
+      value: blockingZoneNames.length
+        ? `${blockingZoneNames.slice(0, 2).join("、")}${blockingZoneNames.length > 2 ? " 等" : ""}需保持通行`
+        : "当前阶段未配置阻断型通道",
+    },
+    {
+      label: "资源重点",
+      value: highPriorityMaterialCount.value
+        ? `${highPriorityMaterialCount.value} 批高优先级物料需优先靠近目标区`
+        : "当前阶段以常规周转物料为主",
+    },
+  ];
+});
+
+const normalizeHeader = (value: string) =>
+  value
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const parseCsvRows = (text: string) => {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    const nextCharacter = text[index + 1];
+
+    if (character === "\"") {
+      if (inQuotes && nextCharacter === "\"") {
+        currentCell += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      currentRow.push(currentCell);
+      currentCell = "";
+      continue;
+    }
+
+    if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (character === "\r" && nextCharacter === "\n") {
+        index += 1;
+      }
+      currentRow.push(currentCell);
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = "";
+      continue;
+    }
+
+    currentCell += character;
+  }
+
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    rows.push(currentRow);
+  }
+
+  return rows.filter((row) => row.some((cell) => cell.trim().length > 0));
+};
+
+const resolveColumnIndex = (headers: string[], key: MaterialCsvField) => {
+  const aliases = MATERIAL_HEADER_ALIASES[key].map(normalizeHeader);
+  return headers.findIndex((header) => aliases.includes(normalizeHeader(header)));
+};
+
+const readCell = (row: string[], index: number) =>
+  (index >= 0 ? row[index] : "").trim();
+
+const readNumber = (value: string, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const defaultZoneIdForPhase = (phaseId?: string | null) =>
+  controlZones.value.find((zone) => !zone.blocking && (!zone.phase_id || zone.phase_id === phaseId))?.id ?? null;
+
+const resolvePhaseId = (value: string) => {
+  const normalized = value.trim();
+  if (normalized && phases.value.some((phase) => phase.id === normalized)) {
+    return normalized;
+  }
+  return activePhaseId.value ?? phases.value[0]?.id ?? null;
+};
+
+const resolveTargetZoneId = (value: string, phaseId: string | null) => {
+  const normalized = value.trim();
+  if (
+    normalized
+    && controlZones.value.some(
+      (zone) => zone.id === normalized && !zone.blocking && (!zone.phase_id || zone.phase_id === phaseId),
+    )
+  ) {
+    return normalized;
+  }
+  return defaultZoneIdForPhase(phaseId);
+};
+
+const buildImportedMaterials = (text: string): MaterialModel[] => {
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) {
+    throw new Error("导入文件缺少表头或数据行，请先下载示例模板。");
+  }
+
+  const headers = rows[0];
+  const nameIndex = resolveColumnIndex(headers, "name");
+  if (nameIndex === -1) {
+    throw new Error("导入文件缺少 name/物料名称 列。");
+  }
+
+  const indices = {
+    category: resolveColumnIndex(headers, "category"),
+    length: resolveColumnIndex(headers, "length"),
+    width: resolveColumnIndex(headers, "width"),
+    height: resolveColumnIndex(headers, "height"),
+    weight_tons: resolveColumnIndex(headers, "weight_tons"),
+    handling_frequency: resolveColumnIndex(headers, "handling_frequency"),
+    stay_days: resolveColumnIndex(headers, "stay_days"),
+    priority_score: resolveColumnIndex(headers, "priority_score"),
+    batch_id: resolveColumnIndex(headers, "batch_id"),
+    target_zone_id: resolveColumnIndex(headers, "target_zone_id"),
+    phase_id: resolveColumnIndex(headers, "phase_id"),
+    notes: resolveColumnIndex(headers, "notes"),
+    display_color: resolveColumnIndex(headers, "display_color"),
+  };
+
+  const imported = rows
+    .slice(1)
+    .filter((row) => row.some((cell) => cell.trim().length > 0))
+    .map((row, index) => {
+      const phaseId = resolvePhaseId(readCell(row, indices.phase_id));
+      const targetZoneId = resolveTargetZoneId(readCell(row, indices.target_zone_id), phaseId);
+      const materialName = readCell(row, nameIndex) || `导入物料 ${index + 1}`;
+
+      return {
+        id: `material-${crypto.randomUUID()}`,
+        name: materialName,
+        category: readCell(row, indices.category) || "general",
+        length: Math.max(readNumber(readCell(row, indices.length), 4.5), 0.1),
+        width: Math.max(readNumber(readCell(row, indices.width), 2.5), 0.1),
+        height: Math.max(readNumber(readCell(row, indices.height), 1), 0.1),
+        weight_tons: Math.max(readNumber(readCell(row, indices.weight_tons), 2.5), 0.1),
+        handling_frequency: Math.max(readNumber(readCell(row, indices.handling_frequency), 1), 1),
+        phase_id: phaseId,
+        batch_id: readCell(row, indices.batch_id) || `IMP-${Date.now()}-${index + 1}`,
+        priority_score: Math.max(readNumber(readCell(row, indices.priority_score), 1), 0.2),
+        stay_days: Math.max(readNumber(readCell(row, indices.stay_days), 3), 1),
+        target_zone_id: targetZoneId,
+        notes: readCell(row, indices.notes) || null,
+        display_color: readCell(row, indices.display_color) || null,
+      } satisfies MaterialModel;
+    });
+
+  if (!imported.length) {
+    throw new Error("导入文件没有可用数据行。");
+  }
+
+  return imported;
+};
+
+const escapeCsv = (value: string) => {
+  if (/["\n,\r]/.test(value)) {
+    return `"${value.replace(/"/g, "\"\"")}"`;
+  }
+  return value;
+};
+
+const openAllMaterialsDialog = () => {
+  materialSearchKeyword.value = "";
+  allMaterialsDialogOpen.value = true;
+};
+
+const focusMaterial = (materialId: string, phaseId?: string | null) => {
+  if (phaseId && phaseId !== activePhaseId.value) {
+    layoutStore.setActivePhase(phaseId);
+  }
+  leftPanelOpen.value = true;
+  selectedMaterialId.value = materialId;
+  allMaterialsDialogOpen.value = false;
+};
 
 const handlePhaseChange = (phaseId: string) => {
   layoutStore.setActivePhase(phaseId);
 };
 
+const openMaterialImport = () => {
+  materialImportInputRef.value?.click();
+};
+
+const handleMaterialImport = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const [file] = input.files ?? [];
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const importedMaterials = buildImportedMaterials(await file.text());
+    layoutStore.appendImportedMaterials(importedMaterials);
+
+    const currentPhaseMaterial = importedMaterials.find((material) => material.phase_id === activePhaseId.value);
+    if (currentPhaseMaterial) {
+      selectedMaterialId.value = currentPhaseMaterial.id;
+    }
+
+    ElMessage.success(`已导入 ${importedMaterials.length} 批物料`);
+  } catch (importError) {
+    const message = importError instanceof Error ? importError.message : "物料导入失败，请检查模板格式。";
+    ElMessage.error(message);
+  } finally {
+    input.value = "";
+  }
+};
+
+const downloadMaterialTemplate = () => {
+  const defaultZoneId = assignableZones.value[0]?.id ?? "";
+  const activePhaseValue = activePhaseId.value ?? "";
+
+  const rows = [
+    [...MATERIAL_TEMPLATE_HEADERS],
+    [
+      "钢筋成捆区",
+      "rebar",
+      "12",
+      "3",
+      "1.2",
+      "6.5",
+      "3",
+      "5",
+      "1.4",
+      "RB-01",
+      defaultZoneId,
+      activePhaseValue,
+      "靠近钢筋加工和塔吊主覆盖区",
+      "#38BDF8",
+    ],
+    [
+      "模板周转区",
+      "formwork",
+      "8",
+      "4",
+      "2.4",
+      "3.2",
+      "2",
+      "4",
+      "1.1",
+      "FW-01",
+      defaultZoneId,
+      activePhaseValue,
+      "避免覆盖道路和卸料通道",
+      "#14B8A6",
+    ],
+  ];
+
+  const csvContent = rows
+    .map((row) => row.map((value) => escapeCsv(String(value))).join(","))
+    .join("\r\n");
+
+  const blob = new Blob([`\uFEFF${csvContent}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `material-import-template-${activePhaseValue || "current"}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
 watch(
   activeMaterials,
-  (materials) => {
-    if (!materials.length) {
+  (phaseMaterials) => {
+    if (!phaseMaterials.length) {
       selectedMaterialId.value = null;
       return;
     }
 
-    if (!selectedMaterialId.value || !materials.some((material) => material.id === selectedMaterialId.value)) {
-      selectedMaterialId.value = materials[0].id;
+    if (
+      !selectedMaterialId.value
+      || !phaseMaterials.some((material) => material.id === selectedMaterialId.value)
+    ) {
+      selectedMaterialId.value = phaseMaterials[0].id;
     }
   },
   { immediate: true, deep: true },
@@ -568,14 +1184,16 @@ onMounted(() => {
 
 .dashboard-toolbar,
 .panel,
-.phase-card,
-.material-card,
+.material-chip,
+.material-summary-card,
 .summary-card,
 .decision-card,
 .action-card,
 .version-card,
 .option-card,
-.empty-card {
+.empty-card,
+.stage-plan-float,
+.stage-plan-dialog-card {
   border: 1px solid rgba(146, 181, 205, 0.12);
   border-radius: 24px;
   background: rgba(8, 18, 28, 0.82);
@@ -605,24 +1223,28 @@ onMounted(() => {
 
 .toolbar-copy h1,
 .panel-head h2,
-.editor-head h3 {
+.editor-head h3,
+.canvas-stage-plan__head h2 {
   margin: 0;
   color: var(--app-text-primary);
   letter-spacing: -0.03em;
 }
 
 .toolbar-copy p,
-.phase-card p,
-.material-card p,
+.panel-head__subtitle,
+.material-chip p,
 .summary-card p,
 .decision-note,
 .action-card p,
 .version-card p,
 .option-card p,
 .empty-card,
-.phase-card small,
-.material-card small,
-.version-card small {
+.version-card small,
+.material-chip small,
+.canvas-stage-plan__head p,
+.canvas-stage-plan__objective,
+.toolbar-hint,
+.editor-footnote {
   margin: 0;
   color: var(--app-text-secondary);
   line-height: 1.5;
@@ -643,7 +1265,10 @@ onMounted(() => {
 
 .toolbar-stat span,
 .summary-card span,
-.field-card span {
+.field-card span,
+.material-summary-card span,
+.canvas-stage-plan__metric span,
+.canvas-stage-plan__fact span {
   display: block;
   margin-bottom: 6px;
   color: var(--app-text-tertiary);
@@ -651,7 +1276,10 @@ onMounted(() => {
 }
 
 .toolbar-stat strong,
-.summary-card strong {
+.summary-card strong,
+.material-summary-card strong,
+.canvas-stage-plan__metric strong,
+.canvas-stage-plan__fact strong {
   color: var(--app-text-primary);
 }
 
@@ -758,6 +1386,13 @@ onMounted(() => {
   padding: 8px;
 }
 
+.canvas-frame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .panel--canvas :deep(.map-shell) {
   flex: 1;
   min-height: 0;
@@ -777,7 +1412,7 @@ onMounted(() => {
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
@@ -789,6 +1424,14 @@ onMounted(() => {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.panel-head__copy {
+  min-width: 0;
+}
+
+.panel-head__subtitle {
+  font-size: 13px;
 }
 
 .section-toggle {
@@ -822,26 +1465,55 @@ onMounted(() => {
   color: #e0f2fe;
 }
 
-.phase-list,
-.material-list,
-.action-list,
-.version-list,
-.option-list {
+.material-toolbar {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar-hint {
+  font-size: 12px;
+}
+
+.material-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.material-list,
+.material-summary-card {
+  padding: 12px;
+}
+
+.material-chip-grid,
+.action-list,
 .version-list,
-.action-list {
+.option-list {
+  display: grid;
+  gap: 10px;
+}
+
+.material-chip-grid {
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+  max-height: 300px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.action-list,
+.version-list,
+.option-list {
+  grid-template-columns: 1fr;
+}
+
+.action-list,
+.version-list {
   max-height: 220px;
   overflow: auto;
   padding-right: 4px;
 }
 
-.phase-card,
-.material-card {
+.material-chip {
   width: 100%;
   display: grid;
   gap: 8px;
@@ -850,36 +1522,32 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.phase-card--active,
-.material-card--active {
+.material-chip--active {
   border-color: rgba(56, 189, 248, 0.28);
   background: rgba(56, 189, 248, 0.08);
 }
 
-.phase-card__head,
-.material-card__head,
+.material-chip__title,
 .version-card__head,
 .decision-head,
-.option-card__head {
+.option-card__head,
+.dialog-material-cell {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.phase-badge,
-.material-batch {
-  border-radius: 999px;
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--app-text-secondary);
-  font-size: 12px;
+.dialog-material-cell {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .material-label {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .material-dot {
@@ -887,6 +1555,7 @@ onMounted(() => {
   height: 12px;
   border-radius: 999px;
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+  flex: 0 0 auto;
 }
 
 .editor-block,
@@ -897,9 +1566,16 @@ onMounted(() => {
   overflow: auto;
 }
 
+.editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -915,17 +1591,37 @@ onMounted(() => {
 
 .editor-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.summary-grid {
+.editor-footnote {
+  font-size: 12px;
+}
+
+.summary-grid,
+.canvas-stage-plan__metrics,
+.canvas-stage-plan__facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.summary-card {
+.summary-grid,
+.canvas-stage-plan__metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.canvas-stage-plan__facts {
+  grid-template-columns: 1fr;
+}
+
+.summary-card,
+.canvas-stage-plan__metric,
+.canvas-stage-plan__fact {
   padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .summary-card--primary {
@@ -934,6 +1630,49 @@ onMounted(() => {
 
 .summary-card--primary strong {
   font-size: 1.8rem;
+}
+
+.stage-plan-float {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 4;
+  min-height: 46px;
+  max-width: calc(100% - 36px);
+  padding: 0 18px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: rgba(5, 14, 24, 0.86);
+  color: var(--app-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stage-plan-float:hover {
+  background: rgba(8, 18, 28, 0.96);
+}
+
+.stage-plan-dialog-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: rgba(5, 14, 24, 0.72);
+}
+
+.canvas-stage-plan__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.canvas-stage-plan__head .status-pill {
+  width: auto;
+  min-width: 88px;
+}
+
+.canvas-stage-plan__objective {
+  color: var(--app-text-primary);
 }
 
 .decision-head {
@@ -999,6 +1738,10 @@ onMounted(() => {
   padding: 14px;
 }
 
+.empty-card--compact {
+  font-size: 13px;
+}
+
 .option-card--muted {
   opacity: 0.7;
 }
@@ -1014,6 +1757,43 @@ onMounted(() => {
 .panel-error {
   margin: 0;
   color: #fda4af;
+}
+
+.dialog-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.dialog-search {
+  flex: 1;
+}
+
+.dialog-toolbar__meta {
+  min-width: max-content;
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.table-shell {
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(146, 181, 205, 0.12);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 :deep(.ghost-input .el-input__wrapper),
@@ -1055,6 +1835,11 @@ onMounted(() => {
   box-shadow: none;
 }
 
+:deep(.utility-button--text.el-button) {
+  min-height: 28px;
+  padding-inline: 10px;
+}
+
 :deep(.danger-button.el-button) {
   color: #fda4af;
 }
@@ -1074,6 +1859,61 @@ onMounted(() => {
   padding-block: 36px 10px;
 }
 
+:deep(.all-materials-dialog .el-dialog) {
+  max-width: 1120px;
+  border-radius: 24px;
+  background: rgba(8, 18, 28, 0.96);
+  box-shadow: var(--panel-shadow);
+}
+
+:deep(.all-materials-dialog .el-dialog__header),
+:deep(.all-materials-dialog .el-dialog__body) {
+  padding-inline: 20px;
+}
+
+:deep(.all-materials-dialog .el-dialog__title),
+:deep(.all-materials-dialog .el-table),
+:deep(.all-materials-dialog .el-table th.el-table__cell),
+:deep(.all-materials-dialog .el-table tr),
+:deep(.all-materials-dialog .el-table td.el-table__cell) {
+  color: var(--app-text-primary);
+}
+
+:deep(.all-materials-dialog .el-table),
+:deep(.all-materials-dialog .el-table__inner-wrapper),
+:deep(.all-materials-dialog .el-table__body-wrapper),
+:deep(.all-materials-dialog .el-table tr),
+:deep(.all-materials-dialog .el-table__header-wrapper) {
+  background: rgba(8, 18, 28, 0.9);
+}
+
+:deep(.all-materials-dialog .el-table th.el-table__cell),
+:deep(.all-materials-dialog .el-table td.el-table__cell) {
+  background: transparent;
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+
+:deep(.all-materials-dialog .el-table__fixed-right::before),
+:deep(.all-materials-dialog .el-table::before) {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+:deep(.stage-plan-dialog .el-dialog) {
+  max-width: 560px;
+  border-radius: 24px;
+  background: rgba(8, 18, 28, 0.96);
+  box-shadow: var(--panel-shadow);
+}
+
+:deep(.stage-plan-dialog .el-dialog__header),
+:deep(.stage-plan-dialog .el-dialog__body) {
+  padding-inline: 20px;
+}
+
+:deep(.stage-plan-dialog .el-dialog__title) {
+  color: var(--app-text-primary);
+}
+
 @media (max-width: 1460px) {
   .dashboard-toolbar {
     grid-template-columns: 1fr;
@@ -1085,6 +1925,12 @@ onMounted(() => {
 
   .panel--right {
     display: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1104,10 +1950,19 @@ onMounted(() => {
     max-height: none;
   }
 
-  .material-list,
+  .material-chip-grid,
   .version-list,
   .action-list {
     max-height: none;
+  }
+
+  .canvas-frame {
+    min-height: 720px;
+  }
+
+  .stage-plan-float {
+    right: 12px;
+    bottom: 12px;
   }
 }
 
@@ -1117,8 +1972,30 @@ onMounted(() => {
   }
 
   .summary-grid,
-  .field-grid {
+  .field-grid,
+  .material-summary-grid,
+  .canvas-stage-plan__metrics {
     grid-template-columns: 1fr;
+  }
+
+  .dialog-toolbar,
+  .editor-actions,
+  .canvas-stage-plan__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .canvas-frame {
+    min-height: auto;
+    display: grid;
+    gap: 12px;
+  }
+
+  .stage-plan-float {
+    right: 12px;
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+    padding-inline: 14px;
   }
 }
 </style>

@@ -690,7 +690,7 @@ watch(
 }
 
 .map-legend {
-  right: 14px;
+  left: 14px;
   bottom: 14px;
   display: flex;
   gap: 12px;
@@ -739,7 +739,7 @@ watch(
 
   .map-legend {
     flex-wrap: wrap;
-    left: 14px;
+    right: 14px;
   }
 }
 </style>
