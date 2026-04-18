@@ -196,155 +196,77 @@
           <button type="button" class="rail-button rail-button--primary" @click="rightPanelOpen = true">
             右栏
           </button>
-          <button type="button" class="rail-button" @click="rightPanelOpen = true; decisionExpanded = true">
+          <button type="button" class="rail-button" @click="decisionDialogOpen = true">
             解释
           </button>
-          <button type="button" class="rail-button" @click="rightPanelOpen = true; actionsExpanded = true">
+          <button type="button" class="rail-button" @click="actionsDialogOpen = true">
             动作
           </button>
         </div>
 
         <template v-else>
-          <section class="panel-section">
-            <div class="panel-head panel-head--button" @click="resultExpanded = !resultExpanded">
-              <div>
-                <p class="panel-kicker">Result</p>
-                <h2>阶段结论</h2>
-              </div>
-              <span class="section-toggle">{{ resultExpanded ? "收起" : "展开" }}</span>
-            </div>
-
-            <div v-show="resultExpanded" class="summary-grid">
-              <article class="summary-card summary-card--primary">
-                <span>落位完成度</span>
-                <strong>{{ currentResult ? `${placementRate}%` : "--" }}</strong>
-                <p>{{ currentResult?.metrics.placed_count ?? 0 }} / {{ activeMaterials.length }} 批</p>
-              </article>
-              <article class="summary-card">
-                <span>运输成本</span>
-                <strong>{{ currentResult ? formatMetric(currentResult.metrics.transport_cost, 1) : "--" }}</strong>
-              </article>
-              <article class="summary-card">
-                <span>安全罚分</span>
-                <strong>{{ currentResult ? formatMetric(currentResult.metrics.safety_penalty, 1) : "--" }}</strong>
-              </article>
-              <article class="summary-card">
-                <span>目标区命中</span>
-                <strong>{{ currentResult ? `${currentResult.metrics.in_target_zone_count} 批` : "--" }}</strong>
-              </article>
-            </div>
-          </section>
-
           <section class="panel-section panel-section--fill">
-            <div class="panel-head panel-head--button" @click="decisionExpanded = !decisionExpanded">
-              <div>
-                <p class="panel-kicker">Decision</p>
-                <h2>选中物料解释</h2>
+            <div class="panel-head">
+              <div class="panel-head__copy">
+                <p class="panel-kicker">Insights</p>
+                <h2>右侧信息</h2>
+                <p class="panel-head__subtitle">{{ activePhase?.name ?? "未设置阶段" }}</p>
               </div>
-              <span class="section-toggle">{{ decisionExpanded ? "收起" : "展开" }}</span>
             </div>
 
-            <template v-if="decisionExpanded && selectedPlacement">
-              <div class="decision-card">
-                <div class="decision-head">
-                  <div>
-                    <strong>{{ selectedPlacement.material_name }}</strong>
-                    <p>{{ selectedPlacement.batch_id || "未分批" }} · {{ selectedPlacement.assigned_crane_name || "未分配塔吊" }}</p>
-                  </div>
-                  <span :class="['status-pill', placementToneClass]">{{ placementLabel }}</span>
-                </div>
-
-                <p class="decision-note">{{ selectedPlacement.decision_note }}</p>
-
-                <div class="tag-list">
-                  <span
-                    v-for="factor in selectedPlacement.decision_factors"
-                    :key="`${factor.label}-${factor.value}`"
-                    :class="['decision-tag', `decision-tag--${factor.tone}`]"
-                  >
-                    {{ factor.label }} · {{ factor.value }}
-                  </span>
-                </div>
-
-                <div class="subsection">
-                  <h3>塔吊方案</h3>
-                  <div class="option-list">
-                    <article
-                      v-for="option in selectedPlacement.crane_options"
-                      :key="option.crane_id"
-                      :class="['option-card', { 'option-card--muted': !option.reachable }]"
-                    >
-                      <div class="option-card__head">
-                        <strong>{{ option.crane_name }}</strong>
-                        <span>{{ option.reachable ? "可达" : "不可达" }}</span>
-                      </div>
-                      <p>{{ option.reason }}</p>
-                      <small>
-                        {{ option.distance != null ? `${formatMetric(option.distance, 1)} m` : "--" }}
-                        ·
-                        {{ option.estimated_cost != null ? formatMetric(option.estimated_cost, 1) : "--" }}
-                      </small>
-                    </article>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <el-empty
-              v-else-if="decisionExpanded"
-              description="先选择一个本阶段物料，并执行一次场布计算。"
-            />
-          </section>
-
-          <section class="panel-section">
-            <div class="panel-head panel-head--button" @click="actionsExpanded = !actionsExpanded">
-              <div>
-                <p class="panel-kicker">Actions</p>
-                <h2>待办动作</h2>
-              </div>
-              <span class="section-toggle">{{ actionsExpanded ? "收起" : "展开" }}</span>
-            </div>
-
-            <div v-if="actionsExpanded && currentResult?.metrics.action_items.length" class="action-list">
-              <article
-                v-for="item in currentResult.metrics.action_items"
-                :key="item.id"
-                :class="['action-card', `action-card--${item.severity}`]"
+            <div class="sidebar-action-grid">
+              <button
+                type="button"
+                class="sidebar-action-button"
+                @click="resultDialogOpen = true"
               >
-                <strong>{{ item.title }}</strong>
-                <p>{{ item.detail }}</p>
-              </article>
-            </div>
-            <article v-else-if="actionsExpanded" class="empty-card">
-              当前阶段暂无系统建议动作。
-            </article>
-          </section>
-
-          <section class="panel-section">
-            <div class="panel-head panel-head--button" @click="versionsExpanded = !versionsExpanded">
-              <div>
-                <p class="panel-kicker">Versions</p>
-                <h2>方案留痕</h2>
-              </div>
-              <span class="section-toggle">{{ versionsExpanded ? "收起" : "展开" }}</span>
-            </div>
-
-            <div v-if="versionsExpanded && phaseVersions.length" class="version-list">
-              <article v-for="version in phaseVersions" :key="version.version_id" class="version-card">
-                <div class="version-card__head">
-                  <strong>{{ version.version_label }}</strong>
-                  <span>{{ version.phase_name || "全部阶段" }}</span>
+                <div class="sidebar-action-button__copy">
+                  <span>阶段结论</span>
+                  <strong>{{ currentResult ? `${placementRate}% 完成度` : "待生成阶段结论" }}</strong>
+                  <small>{{ currentResult ? `${currentResult.metrics.placed_count} / ${activeMaterials.length} 批已落位` : "先执行一次场布计算" }}</small>
                 </div>
-                <p>{{ formatTimestamp(version.created_at) }}</p>
-                <small>
-                  成本 {{ formatMetric(version.total_cost, 1) }} ·
-                  {{ version.placed_count }}/{{ version.placed_count + version.unplaced_count }} 批
-                </small>
-              </article>
+                <span class="section-toggle">弹窗查看</span>
+              </button>
+
+              <button
+                type="button"
+                class="sidebar-action-button"
+                @click="decisionDialogOpen = true"
+              >
+                <div class="sidebar-action-button__copy">
+                  <span>选中物料解释</span>
+                  <strong>{{ selectedPlacement?.material_name ?? "未选中物料" }}</strong>
+                  <small>{{ selectedPlacement ? `${placementLabel} · ${selectedPlacement.assigned_crane_name || "未分配塔吊"}` : "先选择物料并完成计算" }}</small>
+                </div>
+                <span class="section-toggle">弹窗查看</span>
+              </button>
+
+              <button
+                type="button"
+                class="sidebar-action-button"
+                @click="actionsDialogOpen = true"
+              >
+                <div class="sidebar-action-button__copy">
+                  <span>待办动作</span>
+                  <strong>{{ currentResult?.metrics.action_items.length ?? 0 }} 条系统建议</strong>
+                  <small>{{ currentResult?.metrics.action_items.length ? "查看需要人工处理的动作项" : "当前阶段暂无系统建议动作" }}</small>
+                </div>
+                <span class="section-toggle">弹窗查看</span>
+              </button>
+
+              <button
+                type="button"
+                class="sidebar-action-button"
+                @click="versionsDialogOpen = true"
+              >
+                <div class="sidebar-action-button__copy">
+                  <span>方案留痕</span>
+                  <strong>{{ phaseVersions.length }} 条历史版本</strong>
+                  <small>{{ phaseVersions.length ? "查看当前阶段的历史计算结果" : "当前阶段还没有历史版本" }}</small>
+                </div>
+                <span class="section-toggle">弹窗查看</span>
+              </button>
             </div>
-            <article v-else-if="versionsExpanded" class="empty-card">
-              还没有该阶段的计算版本。
-            </article>
           </section>
         </template>
       </aside>
@@ -616,6 +538,191 @@
     </el-dialog>
 
     <el-dialog
+      v-model="resultDialogOpen"
+      title="阶段结论"
+      class="material-dialog"
+      width="620px"
+      destroy-on-close
+    >
+      <section class="material-dialog-card">
+        <div class="summary-grid">
+          <article class="summary-card summary-card--primary">
+            <span>落位完成度</span>
+            <strong>{{ currentResult ? `${placementRate}%` : "--" }}</strong>
+            <p>{{ currentResult?.metrics.placed_count ?? 0 }} / {{ activeMaterials.length }} 批</p>
+          </article>
+          <article class="summary-card">
+            <span>运输成本</span>
+            <strong>{{ currentResult ? formatMetric(currentResult.metrics.transport_cost, 1) : "--" }}</strong>
+          </article>
+          <article class="summary-card">
+            <span>安全罚分</span>
+            <strong>{{ currentResult ? formatMetric(currentResult.metrics.safety_penalty, 1) : "--" }}</strong>
+          </article>
+          <article class="summary-card">
+            <span>目标区命中</span>
+            <strong>{{ currentResult ? `${currentResult.metrics.in_target_zone_count} 批` : "--" }}</strong>
+          </article>
+        </div>
+      </section>
+    </el-dialog>
+
+    <el-dialog
+      v-model="decisionDialogOpen"
+      title="选中物料解释"
+      class="material-dialog"
+      width="860px"
+      destroy-on-close
+    >
+      <section v-if="selectedPlacement" class="material-dialog-card">
+        <div class="decision-card decision-card--dialog">
+          <div class="decision-head">
+            <div class="decision-head__copy">
+              <strong>{{ selectedPlacement.material_name }}</strong>
+              <p>{{ selectedPlacement.batch_id || "未分批" }} · {{ selectedPlacement.assigned_crane_name || "未分配塔吊" }}</p>
+            </div>
+            <span :class="['status-pill', placementToneClass]">{{ placementLabel }}</span>
+          </div>
+
+          <div class="decision-overview">
+            <article class="decision-stat">
+              <span>目标区</span>
+              <strong>{{ selectedPlacement.target_zone_name || zoneName(selectedPlacement.target_zone_id) }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>运输距离</span>
+              <strong>{{ selectedPlacement.distance != null ? `${formatMetric(selectedPlacement.distance, 1)} m` : "--" }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>运输成本</span>
+              <strong>{{ selectedPlacement.transport_cost != null ? formatMetric(selectedPlacement.transport_cost, 1) : "--" }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>障碍穿越</span>
+              <strong>{{ selectedPlacement.path_crosses_obstacle ? "存在" : "无" }}</strong>
+            </article>
+          </div>
+
+          <article class="decision-note-card">
+            <span>系统解释</span>
+            <p class="decision-note">{{ selectedPlacement.decision_note }}</p>
+          </article>
+
+          <div class="decision-section">
+            <div class="decision-section__head">
+              <h3>决策因子</h3>
+              <span>{{ selectedPlacement.decision_factors.length }} 项</span>
+            </div>
+
+            <div class="tag-list">
+              <span
+                v-for="factor in selectedPlacement.decision_factors"
+                :key="`${factor.label}-${factor.value}`"
+                :class="['decision-tag', `decision-tag--${factor.tone}`]"
+              >
+                {{ factor.label }} · {{ factor.value }}
+              </span>
+            </div>
+          </div>
+
+          <div class="decision-section">
+            <div class="decision-section__head">
+              <h3>塔吊方案</h3>
+              <span>{{ selectedPlacement.crane_options.length }} 组</span>
+            </div>
+
+            <div class="option-list">
+              <article
+                v-for="option in selectedPlacement.crane_options"
+                :key="option.crane_id"
+                :class="['option-card', { 'option-card--muted': !option.reachable }]"
+              >
+                <div class="option-card__head">
+                  <div class="option-card__copy">
+                    <strong>{{ option.crane_name }}</strong>
+                    <p>{{ option.reason }}</p>
+                  </div>
+                  <span :class="['mini-pill', option.reachable ? 'mini-pill--success' : 'mini-pill--warning']">
+                    {{ option.reachable ? "可达" : "不可达" }}
+                  </span>
+                </div>
+                <div class="option-card__meta">
+                  <small>距离 {{ option.distance != null ? `${formatMetric(option.distance, 1)} m` : "--" }}</small>
+                  <small>成本 {{ option.estimated_cost != null ? formatMetric(option.estimated_cost, 1) : "--" }}</small>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section v-else class="material-dialog-card">
+        <article class="sidebar-empty-card">
+          <strong>还没有可解释的物料</strong>
+          <p>先在左侧或物料弹窗里选择一批本阶段物料，再执行一次场布计算。</p>
+        </article>
+      </section>
+    </el-dialog>
+
+    <el-dialog
+      v-model="actionsDialogOpen"
+      title="待办动作"
+      class="material-dialog"
+      width="760px"
+      destroy-on-close
+    >
+      <section class="material-dialog-card">
+        <div v-if="currentResult?.metrics.action_items.length" class="action-list action-list--dialog">
+          <article
+            v-for="item in currentResult.metrics.action_items"
+            :key="item.id"
+            :class="['action-card', `action-card--${item.severity}`]"
+          >
+            <div class="action-card__head">
+              <div class="action-card__copy">
+                <span class="action-card__kicker">{{ formatActionCategory(item.category) }}</span>
+                <strong>{{ item.title }}</strong>
+              </div>
+              <span :class="['mini-pill', `mini-pill--${item.severity || 'neutral'}`]">
+                {{ actionSeverityText(item.severity) }}
+              </span>
+            </div>
+            <p>{{ item.detail }}</p>
+          </article>
+        </div>
+        <article v-else class="sidebar-empty-card">
+          当前阶段暂无系统建议动作。
+        </article>
+      </section>
+    </el-dialog>
+
+    <el-dialog
+      v-model="versionsDialogOpen"
+      title="方案留痕"
+      class="material-dialog"
+      width="760px"
+      destroy-on-close
+    >
+      <section class="material-dialog-card">
+        <div v-if="phaseVersions.length" class="version-list version-list--dialog">
+          <article v-for="version in phaseVersions" :key="version.version_id" class="version-card">
+            <div class="version-card__head">
+              <strong>{{ version.version_label }}</strong>
+              <span>{{ version.phase_name || "全部阶段" }}</span>
+            </div>
+            <p>{{ formatTimestamp(version.created_at) }}</p>
+            <small>
+              成本 {{ formatMetric(version.total_cost, 1) }} ·
+              {{ version.placed_count }}/{{ version.placed_count + version.unplaced_count }} 批
+            </small>
+          </article>
+        </div>
+        <article v-else class="sidebar-empty-card">
+          还没有该阶段的计算版本。
+        </article>
+      </section>
+    </el-dialog>
+
+    <el-dialog
       v-model="stagePlanDialogOpen"
       :title="stagePlanFloatingLabel"
       class="stage-plan-dialog"
@@ -737,14 +844,14 @@ const {
 const selectedMaterialId = ref<string | null>(null);
 const leftPanelOpen = ref(true);
 const rightPanelOpen = ref(false);
-const resultExpanded = ref(true);
-const decisionExpanded = ref(true);
-const actionsExpanded = ref(false);
-const versionsExpanded = ref(false);
 const allMaterialsDialogOpen = ref(false);
 const materialOverviewDialogOpen = ref(false);
 const phaseMaterialsDialogOpen = ref(false);
 const materialEditorDialogOpen = ref(false);
+const resultDialogOpen = ref(false);
+const decisionDialogOpen = ref(false);
+const actionsDialogOpen = ref(false);
+const versionsDialogOpen = ref(false);
 const stagePlanDialogOpen = ref(false);
 const materialSearchKeyword = ref("");
 const materialImportInputRef = ref<HTMLInputElement | null>(null);
@@ -774,6 +881,42 @@ const phaseStatusText = (status?: string | null) => {
     return "已完成";
   }
   return status || "未设置";
+};
+
+const actionSeverityText = (severity?: string | null) => {
+  if (severity === "high") {
+    return "高优先";
+  }
+  if (severity === "medium") {
+    return "中优先";
+  }
+  if (severity === "low") {
+    return "低优先";
+  }
+  return "待处理";
+};
+
+const formatActionCategory = (category?: string | null) => {
+  if (category === "safety") {
+    return "安全";
+  }
+  if (category === "flow") {
+    return "动线";
+  }
+  if (category === "storage") {
+    return "堆场";
+  }
+  if (category === "crane") {
+    return "塔吊";
+  }
+  if (category === "zone") {
+    return "目标区";
+  }
+  if (!category) {
+    return "系统建议";
+  }
+
+  return category.replace(/[_-]+/g, " ").trim();
 };
 
 const phaseName = (phaseId?: string | null) =>
@@ -1506,6 +1649,10 @@ onMounted(() => {
   flex: 1;
 }
 
+.panel-section--right-block {
+  flex: 0 0 auto;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -1527,8 +1674,21 @@ onMounted(() => {
   min-width: 0;
 }
 
+.panel-head__stack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .panel-head__subtitle {
   font-size: 13px;
+}
+
+.panel-head__hint {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .section-toggle {
@@ -1572,12 +1732,14 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.material-action-grid {
+.material-action-grid,
+.sidebar-action-grid {
   display: grid;
   gap: 10px;
 }
 
-.material-action-button {
+.material-action-button,
+.sidebar-action-button {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1592,27 +1754,33 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.material-action-button:hover {
+.material-action-button:hover,
+.sidebar-action-button:hover {
   border-color: rgba(56, 189, 248, 0.24);
   background: rgba(56, 189, 248, 0.08);
 }
 
-.material-action-button__copy {
+.material-action-button__copy,
+.sidebar-action-button__copy {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
 .material-action-button__copy span,
-.material-action-button__copy small {
+.material-action-button__copy small,
+.sidebar-action-button__copy span,
+.sidebar-action-button__copy small {
   color: var(--app-text-secondary);
 }
 
-.material-action-button__copy span {
+.material-action-button__copy span,
+.sidebar-action-button__copy span {
   font-size: 12px;
 }
 
-.material-action-button__copy strong {
+.material-action-button__copy strong,
+.sidebar-action-button__copy strong {
   color: var(--app-text-primary);
 }
 
@@ -1656,6 +1824,11 @@ onMounted(() => {
   max-height: 220px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.action-list--dialog,
+.version-list--dialog {
+  max-height: none;
 }
 
 .material-chip {
@@ -1717,6 +1890,17 @@ onMounted(() => {
 
 .editor-block--dialog {
   max-height: none;
+}
+
+.decision-card--dialog {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
 }
 
 .editor-head {
@@ -1832,12 +2016,66 @@ onMounted(() => {
   align-items: flex-start;
 }
 
+.decision-head__copy {
+  display: grid;
+  gap: 4px;
+}
+
 .decision-head p {
   margin-top: 4px;
 }
 
+.decision-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.decision-stat,
+.decision-note-card {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.decision-stat span,
+.decision-note-card span,
+.action-card__kicker {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--app-text-tertiary);
+  font-size: 12px;
+}
+
+.decision-stat strong {
+  color: var(--app-text-primary);
+}
+
+.decision-note-card {
+  display: grid;
+  gap: 6px;
+}
+
 .decision-note {
   color: var(--app-text-primary);
+}
+
+.decision-section {
+  display: grid;
+  gap: 10px;
+}
+
+.decision-section__head,
+.action-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decision-section__head span {
+  color: var(--app-text-secondary);
+  font-size: 12px;
 }
 
 .tag-list {
@@ -1889,6 +2127,98 @@ onMounted(() => {
 .version-card,
 .empty-card {
   padding: 14px;
+}
+
+.sidebar-empty-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(146, 181, 205, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-empty-card strong {
+  color: var(--app-text-primary);
+}
+
+.sidebar-empty-card p {
+  margin: 0;
+  color: var(--app-text-secondary);
+  line-height: 1.6;
+}
+
+.option-card {
+  display: grid;
+  gap: 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.option-card__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.option-card__copy p {
+  margin: 0;
+}
+
+.option-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--app-text-secondary);
+}
+
+.action-card {
+  display: grid;
+  gap: 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.action-card__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.action-card__copy strong {
+  color: var(--app-text-primary);
+}
+
+.mini-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mini-pill--success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+
+.mini-pill--warning,
+.mini-pill--medium {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fde68a;
+}
+
+.mini-pill--high {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
+.mini-pill--low,
+.mini-pill--neutral {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--app-text-secondary);
 }
 
 .empty-card--compact {
@@ -2137,6 +2467,7 @@ onMounted(() => {
   }
 
   .summary-grid,
+  .decision-overview,
   .field-grid,
   .material-summary-grid,
   .canvas-stage-plan__metrics {
@@ -2145,7 +2476,10 @@ onMounted(() => {
 
   .dialog-toolbar,
   .editor-actions,
-  .canvas-stage-plan__head {
+  .canvas-stage-plan__head,
+  .panel-head,
+  .decision-section__head,
+  .action-card__head {
     flex-direction: column;
     align-items: stretch;
   }
