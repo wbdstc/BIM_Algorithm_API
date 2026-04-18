@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -18,6 +19,23 @@ PRIMARY_BUILDING_HEIGHT_METERS = 23.8
 QTZ60_MAX_RADIUS_METERS = 75.0
 QTZ60_CLEARANCE_OVER_BUILDING_METERS = 6.0
 RECOMMENDED_ROAD_OFFSET_METERS = 15.0
+PLANIMETRIC_SCALE_OVERRIDE_ENV = "BIM_PLANIMETRIC_SCALE_OVERRIDE"
+FORCE_CRANE_RADIUS_ENV = "BIM_FORCE_CRANE_RADIUS_METERS"
+
+
+def _read_optional_positive_float(env_name: str) -> float | None:
+    raw_value = os.getenv(env_name)
+    if raw_value is None or raw_value == "":
+        return None
+
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return None
+
+    if value <= 0:
+        return None
+    return value
 
 
 def normalize_snapshot_payload(payload: SnapshotModel) -> SnapshotModel:
@@ -57,6 +75,10 @@ def estimate_safe_transport_height(obstacles: list[schemas.ObstacleInput]) -> fl
 
 
 def _detect_planimetric_scale(data: dict) -> float:
+    scale_override = _read_optional_positive_float(PLANIMETRIC_SCALE_OVERRIDE_ENV)
+    if scale_override is not None:
+        return scale_override
+
     values: list[float] = []
 
     boundary = data.get("site_boundary") or {}
@@ -184,9 +206,12 @@ def _normalize_vertical_data(data: dict) -> None:
 
 
 def _apply_project_calibration(data: dict) -> None:
+    forced_crane_radius = _read_optional_positive_float(FORCE_CRANE_RADIUS_ENV)
     for crane in data.get("working_cranes", []):
         max_radius = crane.get("max_radius")
-        if max_radius is None or not 70.0 <= max_radius <= 80.0:
+        if forced_crane_radius is not None:
+            crane["max_radius"] = forced_crane_radius
+        elif max_radius is None or max_radius <= 0:
             crane["max_radius"] = QTZ60_MAX_RADIUS_METERS
 
     scene_guides = data.get("scene_guides") or {}

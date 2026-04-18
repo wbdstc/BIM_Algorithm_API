@@ -20,6 +20,23 @@ def get_project(project_id: str, db: Session = Depends(get_db)) -> schemas.Proje
     return optimizer_service.serialize_project(db, project)
 
 
+@router.get("/{project_id}/bim-data-status", response_model=schemas.BimDataStatus)
+def get_project_bim_data_status(
+    project_id: str,
+    db: Session = Depends(get_db),
+) -> schemas.BimDataStatus:
+    return optimizer_service.serialize_bim_data_status(db, project_id)
+
+
+@router.put("/{project_id}/bim-data-status", response_model=schemas.BimDataStatus)
+def upsert_project_bim_data_status(
+    project_id: str,
+    payload: schemas.BimDataStatusUpdateRequest,
+    db: Session = Depends(get_db),
+) -> schemas.BimDataStatus:
+    return optimizer_service.upsert_bim_data_status(db, project_id, payload)
+
+
 @router.put("/{project_id}", response_model=schemas.ProjectSnapshotResponse)
 def upsert_project(
     project_id: str,

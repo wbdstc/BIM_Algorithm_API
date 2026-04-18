@@ -42,6 +42,7 @@ class CraneChoice:
     distance: float
     cost: float
     path_crosses_obstacle: bool
+    travel_height: float
 
 
 class LayoutOptimizerService:
@@ -188,8 +189,75 @@ class LayoutOptimizerService:
                 self._serialize_plan_version_summary(version, phase_name_map)
                 for version in recent_plan_versions
             ],
+            bim_data_status=self.serialize_bim_data_status(db, project.id, project=project),
         )
         return normalize_snapshot_payload(snapshot)
+
+    def serialize_bim_data_status(
+        self,
+        db: Session,
+        project_id: str,
+        *,
+        project: models.Project | None = None,
+    ) -> schemas.BimDataStatus:
+        runtime_status = db.get(models.ProjectRuntimeStatus, project_id)
+        if runtime_status is not None:
+            return self._serialize_bim_data_status_record(runtime_status)
+
+        inferred_project = project or db.get(models.Project, project_id)
+        if inferred_project is not None and (inferred_project.obstacles or inferred_project.cranes):
+            inferred_updated_at = self._isoformat(inferred_project.updated_at)
+            return schemas.BimDataStatus(
+                state="live",
+                source="realtime_snapshot",
+                message="实时快照已加载",
+                detail="未发现单独的启动状态记录，已根据后端现有项目快照推断为实时数据。",
+                last_sync_success_at=inferred_updated_at,
+                snapshot_updated_at=inferred_updated_at,
+            )
+
+        return schemas.BimDataStatus(
+            state="demo",
+            source="demo_data",
+            message="未加载实时 BIM 快照，当前使用 demo 数据",
+            detail="后端尚未收到启动同步结果，前端会继续使用本地 demo 场景。",
+        )
+
+    def upsert_bim_data_status(
+        self,
+        db: Session,
+        project_id: str,
+        payload: schemas.BimDataStatusUpdateRequest,
+    ) -> schemas.BimDataStatus:
+        runtime_status = db.get(models.ProjectRuntimeStatus, project_id)
+        if runtime_status is None:
+            runtime_status = models.ProjectRuntimeStatus(
+                project_id=project_id,
+                state="demo",
+                source="demo_data",
+                message="未加载实时 BIM 快照，当前使用 demo 数据",
+            )
+
+        now = datetime.now(UTC)
+        runtime_status.state = payload.state
+        runtime_status.source = payload.source
+        runtime_status.message = payload.message
+        runtime_status.detail = payload.detail
+        runtime_status.last_sync_attempt_at = now
+
+        if payload.state == "live":
+            runtime_status.snapshot_updated_at = now
+            runtime_status.last_sync_success_at = now
+            runtime_status.last_sync_error = None
+        elif payload.state == "syncing":
+            runtime_status.last_sync_error = None
+        else:
+            runtime_status.last_sync_error = payload.last_sync_error
+
+        db.add(runtime_status)
+        db.commit()
+        db.refresh(runtime_status)
+        return self._serialize_bim_data_status_record(runtime_status)
 
     def upsert_project_snapshot(
         self,
@@ -547,17 +615,18 @@ class LayoutOptimizerService:
                 in_target_zone_count=0,
                 generations=0,
                 best_fitness_history=[],
-                warnings=["The active phase has no assigned materials."],
+                warnings=["当前阶段还没有分配待复核物料，暂未生成场布方案。"],
                 decision_summary=[
-                    "No optimization was run because the current phase has no assigned material batches."
+                    f"当前复核范围：{phase_name or '当前阶段'}。",
+                    "未执行场布计算，因为当前阶段没有可参与复核的物料批次。",
                 ],
                 action_items=[
                     schemas.ActionItem(
                         id=f"phase-empty-{phase_id or 'all'}",
                         category="phase",
                         severity="medium",
-                        title="Assign material batches to the active phase",
-                        detail="Move at least one material into the active phase before generating a plan.",
+                        title="先给当前阶段分配物料批次",
+                        detail="至少补充一批当前阶段物料后，再生成场布和吊运复核结果。",
                     )
                 ],
             ),
@@ -648,6 +717,29 @@ class LayoutOptimizerService:
             unplaced_count=version.unplaced_count,
             created_at=created_at.isoformat(),
         )
+
+    def _serialize_bim_data_status_record(
+        self,
+        runtime_status: models.ProjectRuntimeStatus,
+    ) -> schemas.BimDataStatus:
+        return schemas.BimDataStatus(
+            state=runtime_status.state,
+            source=runtime_status.source,
+            message=runtime_status.message,
+            detail=runtime_status.detail,
+            last_sync_error=runtime_status.last_sync_error,
+            last_sync_attempt_at=self._isoformat(runtime_status.last_sync_attempt_at),
+            last_sync_success_at=self._isoformat(runtime_status.last_sync_success_at),
+            snapshot_updated_at=self._isoformat(runtime_status.snapshot_updated_at),
+        )
+
+    @staticmethod
+    def _isoformat(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.isoformat()
 
     @staticmethod
     def _resolve_active_phase_id(
@@ -839,11 +931,7 @@ class LayoutOptimizerService:
         boundary: schemas.SiteBoundary,
         obstacles: list[schemas.ObstacleInput],
     ) -> list[tuple[float, float]]:
-        building_map = {
-            obstacle.group_key or obstacle.id: obstacle
-            for obstacle in obstacles
-            if obstacle.kind == "building"
-        }
+        building_map = self._group_building_references(obstacles)
         building_1 = building_map.get("building_1")
         building_2 = building_map.get("building_2")
         building_3 = building_map.get("building_3")
@@ -908,6 +996,49 @@ class LayoutOptimizerService:
             seen.add(marker)
             unique_centers.append((center_x, center_y))
         return unique_centers
+
+    @staticmethod
+    def _group_building_references(
+        obstacles: list[schemas.ObstacleInput],
+    ) -> dict[str, schemas.ObstacleInput]:
+        grouped: dict[str, list[schemas.ObstacleInput]] = {}
+        for obstacle in obstacles:
+            if obstacle.kind != "building":
+                continue
+            grouped.setdefault(obstacle.group_key or obstacle.id, []).append(obstacle)
+
+        building_map: dict[str, schemas.ObstacleInput] = {}
+        for key, members in grouped.items():
+            min_x = min(item.x - item.length / 2 for item in members)
+            max_x = max(item.x + item.length / 2 for item in members)
+            min_y = min(item.y - item.width / 2 for item in members)
+            max_y = max(item.y + item.width / 2 for item in members)
+            min_z = min((item.min_z if item.min_z is not None else 0.0) for item in members)
+            max_z = max(
+                (
+                    item.max_z
+                    if item.max_z is not None
+                    else (item.min_z or 0.0) + (item.height or 0.0)
+                )
+                for item in members
+            )
+            group_key = next((item.group_key for item in members if item.group_key), None)
+
+            building_map[key] = schemas.ObstacleInput(
+                id=key,
+                name=members[0].name,
+                kind="building",
+                x=(min_x + max_x) / 2,
+                y=(min_y + max_y) / 2,
+                length=max_x - min_x,
+                width=max_y - min_y,
+                min_z=min_z,
+                max_z=max_z,
+                height=max(max_z - min_z, 0.0),
+                group_key=group_key,
+                notes=None,
+            )
+        return building_map
 
     def _clamp_control_zone_center(
         self,
@@ -1078,41 +1209,68 @@ class LayoutOptimizerService:
             local_zone_penalty = 0.0
             blocking_zone_hits: list[str] = []
             decision_factors: list[dict] = []
+            review_alerts: list[dict] = []
 
-            if not self._box_inside_boundary(box, boundary, site_polygon):
+            boundary_violation = not self._box_inside_boundary(box, boundary, site_polygon)
+            obstacle_collision = any(self._boxes_overlap(box, obstacle) for obstacle in obstacle_boxes)
+            stack_collision = any(self._boxes_overlap(box, existing) for existing in occupied)
+            has_3d_collision = obstacle_collision or stack_collision
+
+            if boundary_violation:
                 local_safety_penalty += 100000.0
-                warnings.append(f"{material.name} exceeds the site boundary.")
+                warnings.append(f"{material.name} 超出场地边界，请把堆位收回审批红线内。")
+                self._append_review_alert(
+                    review_alerts,
+                    code="boundary",
+                    level="warning",
+                    title="超出场地边界",
+                    detail="当前堆位压线或出界，需现场收回到围挡范围内。",
+                )
                 self._register_action_item(
                     action_item_map,
                     item_id=f"boundary-{material.id}",
                     category="layout",
                     severity="high",
-                    title=f"Adjust {material.name} inside the site boundary",
-                    detail="The current placement leaves the approved boundary envelope.",
+                    title=f"调整 {material.name} 堆位至场地边界内",
+                    detail="当前堆位已超出审批范围，需先回收边界后再复核吊运。",
                 )
 
-            if any(self._boxes_overlap(box, obstacle) for obstacle in obstacle_boxes):
+            if obstacle_collision:
                 local_safety_penalty += 120000.0
-                warnings.append(f"{material.name} collides with a permanent obstacle.")
+                warnings.append(f"{material.name} 与楼体或永久障碍发生 3D 碰撞，不能直接落位。")
+                self._append_review_alert(
+                    review_alerts,
+                    code="three_d_collision",
+                    level="danger",
+                    title="3D 碰撞",
+                    detail="当前堆位与楼体或固定障碍在三维范围内重叠，需立即调整。",
+                )
                 self._register_action_item(
                     action_item_map,
                     item_id=f"obstacle-{material.id}",
                     category="safety",
                     severity="high",
-                    title=f"Clear the collision around {material.name}",
-                    detail="The material overlaps a building or permanent obstacle in the current phase.",
+                    title=f"清除 {material.name} 周边 3D 碰撞",
+                    detail="当前堆位与楼体或固定障碍重叠，需重新选点后再组织吊装。",
                 )
 
-            if any(self._boxes_overlap(box, existing) for existing in occupied):
+            if stack_collision:
                 local_safety_penalty += 150000.0
-                warnings.append(f"{material.name} overlaps another material stack.")
+                warnings.append(f"{material.name} 与其他物料堆场发生 3D 碰撞，请分区或错峰摆放。")
+                self._append_review_alert(
+                    review_alerts,
+                    code="three_d_collision",
+                    level="danger",
+                    title="3D 碰撞",
+                    detail="当前堆位与已布置物料重叠，需拆分堆位或调整顺序。",
+                )
                 self._register_action_item(
                     action_item_map,
                     item_id=f"stack-{material.id}",
                     category="layout",
                     severity="high",
-                    title=f"Separate stacked materials near {material.name}",
-                    detail="Two planned storage footprints overlap and need resequencing.",
+                    title=f"拆分 {material.name} 与相邻堆场",
+                    detail="两个计划堆位重叠，需重新分区或调整进场先后。",
                 )
 
             for zone, zone_box in blocking_zone_pairs:
@@ -1122,15 +1280,22 @@ class LayoutOptimizerService:
             if blocking_zone_hits:
                 local_safety_penalty += 160000.0 * len(blocking_zone_hits)
                 warnings.append(
-                    f"{material.name} occupies blocking zones: {', '.join(sorted(blocking_zone_hits))}."
+                    f"{material.name} 占用了 {', '.join(sorted(blocking_zone_hits))}，需恢复通道净空。"
+                )
+                self._append_review_alert(
+                    review_alerts,
+                    code="blocking_zone",
+                    level="danger",
+                    title="占用受限通道",
+                    detail=f"当前堆位压占 {', '.join(sorted(blocking_zone_hits))}，现场需先腾空后再执行。",
                 )
                 self._register_action_item(
                     action_item_map,
                     item_id=f"zone-block-{material.id}",
                     category="access",
                     severity="high",
-                    title=f"Release restricted access around {material.name}",
-                    detail=f"Move the stack out of {', '.join(sorted(blocking_zone_hits))}.",
+                    title=f"释放 {material.name} 周边受限通道",
+                    detail=f"将该堆位移出 {', '.join(sorted(blocking_zone_hits))}，恢复车辆和消防净空。",
                 )
 
             target_zone = target_zone_map.get(material.target_zone_id) if material.target_zone_id else None
@@ -1150,15 +1315,22 @@ class LayoutOptimizerService:
                         * max(target_zone.penalty_factor, 1.0)
                     )
                     warnings.append(
-                        f"{material.name} misses preferred zone {target_zone.name} by {zone_distance:.1f}m."
+                        f"{material.name} 偏离目标区 {target_zone.name} 约 {zone_distance:.1f}m，请结合周转路线复核。"
+                    )
+                    self._append_review_alert(
+                        review_alerts,
+                        code="outside_target_zone",
+                        level="warning",
+                        title="未命中目标区",
+                        detail=f"当前堆位距离目标区 {target_zone.name} 约 {zone_distance:.1f}m，可能拉长二次转运路线。",
                     )
                     self._register_action_item(
                         action_item_map,
                         item_id=f"zone-target-{material.id}",
                         category="logistics",
                         severity="medium",
-                        title=f"Bring {material.name} back into {target_zone.name}",
-                        detail="Target-zone compliance is low for the active phase delivery plan.",
+                        title=f"把 {material.name} 收回到 {target_zone.name}",
+                        detail="当前堆位偏离目标区，建议优先压缩周转距离后再定点。",
                     )
 
             crane_options, crane_choice = self._rank_crane_options(
@@ -1174,29 +1346,59 @@ class LayoutOptimizerService:
             )
 
             if crane_choice is None:
+                has_radius_limit = any(item["reason_code"] == "over_radius" for item in crane_options)
+                has_capacity_limit = any(item["reason_code"] == "over_capacity" for item in crane_options)
                 local_safety_penalty += 90000.0
-                warnings.append(f"{material.name} is outside every crane radius or load limit.")
+                if has_radius_limit and has_capacity_limit:
+                    warnings.append(f"{material.name} 当前无可用塔吊：既超出作业半径，也存在起重量不足。")
+                elif has_radius_limit:
+                    warnings.append(f"{material.name} 超出塔吊覆盖半径，当前没有可用吊点。")
+                    self._append_review_alert(
+                        review_alerts,
+                        code="over_crane_radius",
+                        level="danger",
+                        title="超塔吊半径",
+                        detail="当前堆位到塔吊的平面距离超出作业半径，需换位或调整吊装资源。",
+                    )
+                else:
+                    warnings.append(f"{material.name} 当前没有满足起重量的塔吊，暂不能吊运。")
+                    self._append_review_alert(
+                        review_alerts,
+                        code="no_crane_capacity",
+                        level="warning",
+                        title="塔吊能力不足",
+                        detail="现有塔吊起重量不满足该批物料，需调整设备或拆分吊次。",
+                    )
                 self._register_action_item(
                     action_item_map,
                     item_id=f"crane-{material.id}",
                     category="equipment",
                     severity="high",
-                    title=f"Restore crane coverage for {material.name}",
-                    detail="Move the material or adjust lifting resources because no crane can serve it.",
+                    title=f"恢复 {material.name} 的塔吊覆盖",
+                    detail="需调整堆位或补充吊装资源，确保至少一台塔吊满足半径和起重量条件。",
                 )
                 status = "unreachable"
             else:
                 transport_cost += crane_choice.cost
                 placed_count += 1
                 if crane_choice.path_crosses_obstacle:
-                    warnings.append(f"{material.name} uses a crane path with aerial conflicts.")
+                    warnings.append(
+                        f"{material.name} 吊运净高约 {crane_choice.travel_height:.1f}m，空中运输线穿越障碍。"
+                    )
+                    self._append_review_alert(
+                        review_alerts,
+                        code="path_crosses_obstacle",
+                        level="warning",
+                        title="吊运路径穿越障碍",
+                        detail=f"按约 {crane_choice.travel_height:.1f}m 的吊运净高复核，空中通道仍穿越楼体或受限区。",
+                    )
                     self._register_action_item(
                         action_item_map,
                         item_id=f"path-{material.id}",
                         category="safety",
                         severity="medium",
-                        title=f"Clear the aerial corridor for {material.name}",
-                        detail="The lowest-cost crane path still crosses an obstacle or restricted zone.",
+                        title=f"清理 {material.name} 的吊运通道",
+                        detail="最优塔吊路径仍穿越楼体或受限区，需调整堆位或吊装路线。",
                     )
                 if local_safety_penalty > 0:
                     status = "violated"
@@ -1223,6 +1425,9 @@ class LayoutOptimizerService:
                 inside_target_zone=inside_target_zone,
                 blocking_zone_hits=blocking_zone_hits,
                 crane_choice=crane_choice,
+                boundary_violation=boundary_violation,
+                has_3d_collision=has_3d_collision,
+                is_beyond_crane_radius=any(item["code"] == "over_crane_radius" for item in review_alerts),
             )
 
             placement = {
@@ -1250,6 +1455,8 @@ class LayoutOptimizerService:
                 "decision_factors": decision_factors,
                 "crane_options": crane_options,
                 "path_crosses_obstacle": crane_choice.path_crosses_obstacle if crane_choice else False,
+                "travel_height": round(crane_choice.travel_height, 3) if crane_choice else None,
+                "review_alerts": review_alerts,
                 "status": status,
             }
 
@@ -1305,19 +1512,25 @@ class LayoutOptimizerService:
                         crane_id=crane.id,
                         crane_name=crane.name,
                         reachable=False,
-                        reason="Load limit exceeded",
+                        reason=f"起重量不足：需 {material.weight_tons:.1f}t，塔吊上限 {crane.capacity_tons:.1f}t。",
+                        reason_code="over_capacity",
                     ).model_dump()
                 )
                 continue
 
             horizontal_distance = math.dist((crane.x, crane.y), (x, y))
             if horizontal_distance > crane.max_radius:
+                over_radius = horizontal_distance - crane.max_radius
                 crane_options.append(
                     schemas.CraneOption(
                         crane_id=crane.id,
                         crane_name=crane.name,
                         reachable=False,
-                        reason="Outside operating radius",
+                        reason=(
+                            f"超出作业半径 {over_radius:.1f}m"
+                            f"（当前 {horizontal_distance:.1f}m / 半径 {crane.max_radius:.1f}m）。"
+                        ),
+                        reason_code="over_radius",
                         distance=round(horizontal_distance, 3),
                     ).model_dump()
                 )
@@ -1344,6 +1557,7 @@ class LayoutOptimizerService:
                 distance=distance,
                 cost=cost,
                 path_crosses_obstacle=path_crosses_obstacle,
+                travel_height=travel_z,
             )
             reachable_choices.append(choice)
             crane_options.append(
@@ -1351,10 +1565,16 @@ class LayoutOptimizerService:
                     crane_id=crane.id,
                     crane_name=crane.name,
                     reachable=True,
-                    reason="Reachable with corridor penalty" if path_crosses_obstacle else "Reachable",
+                    reason=(
+                        f"可吊运，但按 {travel_z:.1f}m 净高复核仍存在空中穿越。"
+                        if path_crosses_obstacle
+                        else "覆盖范围和起重量满足要求，可直接吊运。"
+                    ),
+                    reason_code="path_crosses_obstacle" if path_crosses_obstacle else "reachable",
                     distance=round(distance, 3),
                     estimated_cost=round(cost, 3),
                     path_crosses_obstacle=path_crosses_obstacle,
+                    travel_height=round(travel_z, 3),
                 ).model_dump()
             )
 
@@ -1381,7 +1601,7 @@ class LayoutOptimizerService:
         if phase_name:
             factors.append(
                 schemas.DecisionFactor(
-                    label="Phase",
+                    label="阶段",
                     value=phase_name,
                     tone="neutral",
                 ).model_dump()
@@ -1389,7 +1609,7 @@ class LayoutOptimizerService:
         if material.batch_id:
             factors.append(
                 schemas.DecisionFactor(
-                    label="Batch",
+                    label="批次",
                     value=material.batch_id,
                     tone="neutral",
                 ).model_dump()
@@ -1397,15 +1617,15 @@ class LayoutOptimizerService:
         if target_zone_name:
             factors.append(
                 schemas.DecisionFactor(
-                    label="Target zone",
-                    value=target_zone_name if inside_target_zone else f"Outside {target_zone_name}",
+                    label="目标区",
+                    value=target_zone_name if inside_target_zone else f"偏离 {target_zone_name}",
                     tone="success" if inside_target_zone else "warning",
                 ).model_dump()
             )
         if blocking_zone_hits:
             factors.append(
                 schemas.DecisionFactor(
-                    label="Restricted zones",
+                    label="受限区",
                     value=", ".join(blocking_zone_hits),
                     tone="danger",
                 ).model_dump()
@@ -1413,9 +1633,16 @@ class LayoutOptimizerService:
         if crane_choice:
             factors.append(
                 schemas.DecisionFactor(
-                    label="Assigned crane",
+                    label="塔吊",
                     value=crane_choice.crane_name,
                     tone="warning" if crane_choice.path_crosses_obstacle else "success",
+                ).model_dump()
+            )
+            factors.append(
+                schemas.DecisionFactor(
+                    label="吊运净高",
+                    value=f"{crane_choice.travel_height:.1f}m",
+                    tone="warning" if crane_choice.path_crosses_obstacle else "neutral",
                 ).model_dump()
             )
         return factors
@@ -1427,16 +1654,28 @@ class LayoutOptimizerService:
         inside_target_zone: bool,
         blocking_zone_hits: list[str],
         crane_choice: CraneChoice | None,
+        boundary_violation: bool,
+        has_3d_collision: bool,
+        is_beyond_crane_radius: bool,
     ) -> str:
+        if boundary_violation:
+            return f"{material.name} 当前堆位已经超出场地边界，需先回收红线内再做吊装复核。"
         if crane_choice is None:
-            return f"{material.name} has no valid crane assignment in the current layout."
+            if is_beyond_crane_radius:
+                return f"{material.name} 当前堆位超出塔吊覆盖半径，现场需换位或补充吊装资源。"
+            return f"{material.name} 当前没有满足起重量或覆盖条件的塔吊，暂不具备吊运条件。"
+        if has_3d_collision:
+            return f"{material.name} 当前堆位与楼体或其他堆场发生 3D 碰撞，不能直接执行。"
         if blocking_zone_hits:
-            return f"{material.name} still occupies restricted access space and needs manual resequencing."
+            return f"{material.name} 占用了 {', '.join(sorted(blocking_zone_hits))}，需先恢复通道净空。"
         if target_zone_name and not inside_target_zone:
-            return f"{material.name} is reachable, but it misses preferred zone {target_zone_name}."
+            return f"{material.name} 虽可吊运，但偏离目标区 {target_zone_name}，需现场确认二次转运路线。"
         if crane_choice.path_crosses_obstacle:
-            return f"{material.name} is placed, but the crane path has aerial conflicts."
-        return f"{material.name} is placed in the lowest-cost reachable position for the active phase."
+            return (
+                f"{material.name} 吊运净高约 {crane_choice.travel_height:.1f}m，"
+                "空中运输线仍穿越楼体或受限区，需重点复核。"
+            )
+        return f"{material.name} 已生成可执行堆位，堆高 {material.height:.1f}m，塔吊覆盖满足要求。"
 
     @staticmethod
     def _build_decision_summary(
@@ -1447,13 +1686,33 @@ class LayoutOptimizerService:
         warnings: list[str],
     ) -> list[str]:
         summary = [
-            f"Active planning scope: {phase_name or 'all materials'}.",
-            f"Placed {placed_count} of {len(materials)} material batches in the active phase.",
-            f"{in_target_zone_count} material batches landed in their preferred control zones.",
+            f"当前复核范围：{phase_name or '全部物料'}。",
+            f"本轮已完成 {placed_count} / {len(materials)} 批物料落位。",
+            f"其中 {in_target_zone_count} 批命中预设目标区。",
         ]
         if warnings:
-            summary.append(f"{len(set(warnings))} risk signals require manual review.")
+            summary.append(f"共识别 {len(set(warnings))} 项需现场复核的风险。")
         return summary
+
+    @staticmethod
+    def _append_review_alert(
+        alerts: list[dict],
+        *,
+        code: str,
+        level: str,
+        title: str,
+        detail: str,
+    ) -> None:
+        if any(alert["code"] == code for alert in alerts):
+            return
+        alerts.append(
+            schemas.PlacementAlert(
+                code=code,
+                level=level,
+                title=title,
+                detail=detail,
+            ).model_dump()
+        )
 
     @staticmethod
     def _register_action_item(

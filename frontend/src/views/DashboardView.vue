@@ -5,6 +5,25 @@
         <p class="toolbar-kicker">PHASE PLANNING WORKSPACE</p>
         <h1>{{ projectName }}</h1>
         <p>{{ phaseSubtitle }}</p>
+        <div class="toolbar-bim-status">
+          <div class="toolbar-bim-status__copy">
+            <div class="toolbar-bim-status__head">
+              <span class="toolbar-bim-status__label">BIM 数据</span>
+              <span :class="['status-pill', 'toolbar-bim-status__pill', bimDataStatusToneClass]">
+                {{ bimDataStatusBadge }}
+              </span>
+            </div>
+            <strong>{{ bimDataStatusLabel }}</strong>
+            <small>{{ bimDataStatusMeta }}</small>
+          </div>
+          <el-button
+            class="utility-button toolbar-bim-status__button"
+            :loading="snapshotLoading"
+            @click="handleRetrySnapshot"
+          >
+            重试加载快照
+          </el-button>
+        </div>
       </div>
 
       <div class="toolbar-stats">
@@ -236,7 +255,7 @@
                 <div class="sidebar-action-button__copy">
                   <span>选中物料解释</span>
                   <strong>{{ selectedPlacement?.material_name ?? "未选中物料" }}</strong>
-                  <small>{{ selectedPlacement ? `${placementLabel} · ${selectedPlacement.assigned_crane_name || "未分配塔吊"}` : "先选择物料并完成计算" }}</small>
+                  <small>{{ selectedPlacement ? `${placementLabel} · ${displayCraneName(selectedPlacement.assigned_crane_id, selectedPlacement.assigned_crane_name)}` : "先选择物料并完成计算" }}</small>
                 </div>
                 <span class="section-toggle">弹窗查看</span>
               </button>
@@ -266,6 +285,78 @@
                 </div>
                 <span class="section-toggle">弹窗查看</span>
               </button>
+            </div>
+
+            <div class="review-highlight-grid">
+              <article class="review-highlight-card">
+                <span>路径穿障</span>
+                <strong>{{ keyAlertCounts.pathCrossesObstacle }} 批</strong>
+                <p>重点复核 `path_crosses_obstacle` 与吊运净高。</p>
+              </article>
+              <article class="review-highlight-card">
+                <span>3D 碰撞</span>
+                <strong>{{ keyAlertCounts.threeDCollision }} 批</strong>
+                <p>包含楼体/障碍和物料堆场的三维冲突。</p>
+              </article>
+              <article class="review-highlight-card">
+                <span>超塔吊半径</span>
+                <strong>{{ keyAlertCounts.overCraneRadius }} 批</strong>
+                <p>当前堆位没有可覆盖的塔吊吊点。</p>
+              </article>
+            </div>
+
+            <div class="review-list-section">
+              <div class="decision-section__head">
+                <div class="review-list-section__copy">
+                  <h3>复核结果列表</h3>
+                  <span>{{ currentResult ? `${reviewPlacementList.length} 批待核对` : "先执行一次场布计算" }}</span>
+                </div>
+                <span class="section-toggle">按风险优先级排序</span>
+              </div>
+
+              <div v-if="reviewPlacementList.length" class="review-list">
+                <button
+                  v-for="placement in reviewPlacementList"
+                  :key="placement.material_id"
+                  type="button"
+                  :class="['review-placement-card', { 'review-placement-card--active': placement.material_id === selectedMaterialId }]"
+                  @click="focusPlacement(placement)"
+                >
+                  <div class="review-placement-card__head">
+                    <div class="review-placement-card__copy">
+                      <strong>{{ placement.material_name }}</strong>
+                      <small>{{ placement.batch_id || "未分批" }} · {{ displayCraneName(placement.assigned_crane_id, placement.assigned_crane_name) }}</small>
+                    </div>
+                    <span :class="['mini-pill', placementMiniTone(placement)]">
+                      {{ placementStatusText(placement) }}
+                    </span>
+                  </div>
+
+                  <div class="review-placement-card__meta">
+                    <span>堆高 {{ formatHeightText(placement.height) }}</span>
+                    <span>吊运净高 {{ formatHeightText(placement.travel_height) }}</span>
+                    <span>{{ placement.target_zone_name || zoneName(placement.target_zone_id) }}</span>
+                  </div>
+
+                  <div v-if="topPlacementAlerts(placement).length" class="review-alert-list">
+                    <span
+                      v-for="alert in topPlacementAlerts(placement)"
+                      :key="`${placement.material_id}-${alert.code}`"
+                      :class="['review-alert-chip', `review-alert-chip--${alert.level}`]"
+                    >
+                      {{ alert.title }}
+                    </span>
+                  </div>
+
+                  <p class="review-placement-card__detail">
+                    {{ topPlacementAlerts(placement, 1)[0]?.detail || placement.decision_note }}
+                  </p>
+                </button>
+              </div>
+              <article v-else class="sidebar-empty-card">
+                <strong>还没有可复核的结果</strong>
+                <p>先生成本阶段场布，右侧会按风险排序展示每批物料的高度、塔吊覆盖和重点告警。</p>
+              </article>
             </div>
           </section>
         </template>
@@ -564,6 +655,24 @@
             <strong>{{ currentResult ? `${currentResult.metrics.in_target_zone_count} 批` : "--" }}</strong>
           </article>
         </div>
+
+        <div class="review-highlight-grid review-highlight-grid--dialog">
+          <article class="review-highlight-card">
+            <span>路径穿障</span>
+            <strong>{{ keyAlertCounts.pathCrossesObstacle }} 批</strong>
+            <p>吊运净高满足但空中路径仍需复核。</p>
+          </article>
+          <article class="review-highlight-card">
+            <span>3D 碰撞</span>
+            <strong>{{ keyAlertCounts.threeDCollision }} 批</strong>
+            <p>优先处理楼体/堆场三维重叠问题。</p>
+          </article>
+          <article class="review-highlight-card">
+            <span>超塔吊半径</span>
+            <strong>{{ keyAlertCounts.overCraneRadius }} 批</strong>
+            <p>需调整堆位或补充吊装资源。</p>
+          </article>
+        </div>
       </section>
     </el-dialog>
 
@@ -579,7 +688,7 @@
           <div class="decision-head">
             <div class="decision-head__copy">
               <strong>{{ selectedPlacement.material_name }}</strong>
-              <p>{{ selectedPlacement.batch_id || "未分批" }} · {{ selectedPlacement.assigned_crane_name || "未分配塔吊" }}</p>
+              <p>{{ selectedPlacement.batch_id || "未分批" }} · {{ displayCraneName(selectedPlacement.assigned_crane_id, selectedPlacement.assigned_crane_name) }}</p>
             </div>
             <span :class="['status-pill', placementToneClass]">{{ placementLabel }}</span>
           </div>
@@ -591,15 +700,31 @@
             </article>
             <article class="decision-stat">
               <span>运输距离</span>
-              <strong>{{ selectedPlacement.distance != null ? `${formatMetric(selectedPlacement.distance, 1)} m` : "--" }}</strong>
+              <strong>{{ formatDistanceText(selectedPlacement.distance) }}</strong>
             </article>
             <article class="decision-stat">
               <span>运输成本</span>
               <strong>{{ selectedPlacement.transport_cost != null ? formatMetric(selectedPlacement.transport_cost, 1) : "--" }}</strong>
             </article>
             <article class="decision-stat">
-              <span>障碍穿越</span>
-              <strong>{{ selectedPlacement.path_crosses_obstacle ? "存在" : "无" }}</strong>
+              <span>堆场高度</span>
+              <strong>{{ formatHeightText(selectedPlacement.height) }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>吊运净高</span>
+              <strong>{{ formatHeightText(selectedPlacement.travel_height) }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>3D 碰撞</span>
+              <strong>{{ hasPlacementAlert(selectedPlacement, "three_d_collision") ? "存在" : "无" }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>超塔吊半径</span>
+              <strong>{{ hasPlacementAlert(selectedPlacement, "over_crane_radius") ? "存在" : "无" }}</strong>
+            </article>
+            <article class="decision-stat">
+              <span>路径穿障</span>
+              <strong>{{ hasPlacementAlert(selectedPlacement, "path_crosses_obstacle") ? "存在" : "无" }}</strong>
             </article>
           </div>
 
@@ -607,6 +732,31 @@
             <span>系统解释</span>
             <p class="decision-note">{{ selectedPlacement.decision_note }}</p>
           </article>
+
+          <div v-if="selectedPlacement.review_alerts.length" class="decision-section">
+            <div class="decision-section__head">
+              <h3>重点告警</h3>
+              <span>{{ selectedPlacement.review_alerts.length }} 项</span>
+            </div>
+
+            <div class="option-list">
+              <article
+                v-for="alert in sortPlacementAlerts(selectedPlacement)"
+                :key="`${selectedPlacement.material_id}-${alert.code}`"
+                class="option-card"
+              >
+                <div class="option-card__head">
+                  <div class="option-card__copy">
+                    <strong>{{ alert.title }}</strong>
+                    <p>{{ alert.detail }}</p>
+                  </div>
+                  <span :class="['mini-pill', alert.level === 'danger' ? 'mini-pill--high' : 'mini-pill--medium']">
+                    {{ alert.level === "danger" ? "高风险" : "需复核" }}
+                  </span>
+                </div>
+              </article>
+            </div>
+          </div>
 
           <div class="decision-section">
             <div class="decision-section__head">
@@ -639,16 +789,17 @@
               >
                 <div class="option-card__head">
                   <div class="option-card__copy">
-                    <strong>{{ option.crane_name }}</strong>
+                    <strong>{{ displayCraneName(option.crane_id, option.crane_name) }}</strong>
                     <p>{{ option.reason }}</p>
                   </div>
-                  <span :class="['mini-pill', option.reachable ? 'mini-pill--success' : 'mini-pill--warning']">
-                    {{ option.reachable ? "可达" : "不可达" }}
+                  <span :class="['mini-pill', craneOptionBadgeClass(option)]">
+                    {{ craneOptionBadgeText(option) }}
                   </span>
                 </div>
                 <div class="option-card__meta">
-                  <small>距离 {{ option.distance != null ? `${formatMetric(option.distance, 1)} m` : "--" }}</small>
+                  <small>距离 {{ formatDistanceText(option.distance) }}</small>
                   <small>成本 {{ option.estimated_cost != null ? formatMetric(option.estimated_cost, 1) : "--" }}</small>
+                  <small>净高 {{ formatHeightText(option.travel_height) }}</small>
                 </div>
               </article>
             </div>
@@ -785,8 +936,9 @@ import { ElMessage } from "element-plus";
 import { storeToRefs } from "pinia";
 
 import CanvasMap from "../components/CanvasMap.vue";
-import type { MaterialModel, PlacementResult } from "../types/layout";
+import type { MaterialModel, PlacementAlert, PlacementResult } from "../types/layout";
 import { useLayoutStore } from "../stores/layout";
+import { resolveCraneName } from "../utils/craneLabels";
 
 const MATERIAL_TEMPLATE_HEADERS = [
   "name",
@@ -829,6 +981,7 @@ const {
   activeMaterials,
   activePhase,
   activePhaseId,
+  bimDataStatus,
   controlZones,
   error,
   hasResult,
@@ -839,6 +992,8 @@ const {
   phases,
   projectName,
   recentPlanVersions,
+  snapshotLoading,
+  workingCranes,
 } = storeToRefs(layoutStore);
 
 const selectedMaterialId = ref<string | null>(null);
@@ -870,6 +1025,137 @@ const formatTimestamp = (value: string) =>
     minute: "2-digit",
   }).format(new Date(value));
 
+const formatDistanceText = (value?: number | null) =>
+  value != null ? `${formatMetric(value, 1)} m` : "--";
+
+const formatHeightText = (value?: number | null) =>
+  value != null ? `${formatMetric(value, 1)} m` : "--";
+
+const displayCraneName = (craneId?: string | null, craneName?: string | null) =>
+  resolveCraneName(craneId, craneName, workingCranes.value) ?? "未分配塔吊";
+
+const alertPriority = (alert: PlacementAlert) => {
+  const priorityMap: Record<string, number> = {
+    three_d_collision: 0,
+    over_crane_radius: 1,
+    path_crosses_obstacle: 2,
+    blocking_zone: 3,
+    no_crane_capacity: 4,
+    outside_target_zone: 5,
+    boundary: 6,
+  };
+  return priorityMap[alert.code] ?? 99;
+};
+
+const sortPlacementAlerts = (placement?: PlacementResult | null) =>
+  [...(placement?.review_alerts ?? [])].sort((left, right) => {
+    const priorityGap = alertPriority(left) - alertPriority(right);
+    if (priorityGap !== 0) {
+      return priorityGap;
+    }
+    return left.title.localeCompare(right.title, "zh-CN");
+  });
+
+const topPlacementAlerts = (placement?: PlacementResult | null, limit = 3) =>
+  sortPlacementAlerts(placement).slice(0, limit);
+
+const hasPlacementAlert = (placement: PlacementResult | null | undefined, code: string) =>
+  Boolean(placement?.review_alerts.some((alert) => alert.code === code));
+
+const placementStatusText = (placement?: PlacementResult | null) => {
+  if (!placement) {
+    return "待分析";
+  }
+  if (placement.status === "placed") {
+    return "已落位";
+  }
+  if (placement.status === "unreachable") {
+    return "不可吊运";
+  }
+  if (placement.status === "violated") {
+    return "存在冲突";
+  }
+  return "需复核";
+};
+
+const placementStatusTone = (placement?: PlacementResult | null) => {
+  if (!placement) {
+    return "status-pill--idle";
+  }
+  if (placement.status === "placed") {
+    return "status-pill--success";
+  }
+  if (placement.status === "unreachable" || placement.status === "violated" || placement.review_alerts.length) {
+    return "status-pill--warning";
+  }
+  return "status-pill--idle";
+};
+
+const placementMiniTone = (placement?: PlacementResult | null) => {
+  if (!placement) {
+    return "mini-pill--neutral";
+  }
+  if (hasPlacementAlert(placement, "three_d_collision") || hasPlacementAlert(placement, "over_crane_radius")) {
+    return "mini-pill--high";
+  }
+  if (hasPlacementAlert(placement, "path_crosses_obstacle") || placement.status === "at_risk") {
+    return "mini-pill--medium";
+  }
+  if (placement.status === "placed") {
+    return "mini-pill--success";
+  }
+  return "mini-pill--neutral";
+};
+
+const placementRiskScore = (placement: PlacementResult) => {
+  let score = 0;
+
+  if (hasPlacementAlert(placement, "three_d_collision")) {
+    score += 500;
+  }
+  if (hasPlacementAlert(placement, "over_crane_radius")) {
+    score += 400;
+  }
+  if (hasPlacementAlert(placement, "path_crosses_obstacle")) {
+    score += 300;
+  }
+  if (placement.status === "unreachable") {
+    score += 220;
+  } else if (placement.status === "violated") {
+    score += 180;
+  } else if (placement.status === "at_risk") {
+    score += 120;
+  }
+
+  return score + placement.review_alerts.length;
+};
+
+const craneOptionBadgeText = (option: PlacementResult["crane_options"][number]) => {
+  if (option.reason_code === "over_radius") {
+    return "超半径";
+  }
+  if (option.reason_code === "over_capacity") {
+    return "超载重";
+  }
+  if (option.reason_code === "path_crosses_obstacle") {
+    return "需穿障";
+  }
+  return option.reachable ? "可吊运" : "需复核";
+};
+
+const craneOptionBadgeClass = (option: PlacementResult["crane_options"][number]) => {
+  if (option.reason_code === "over_radius") {
+    return "mini-pill--high";
+  }
+  if (option.reason_code === "path_crosses_obstacle") {
+    return "mini-pill--medium";
+  }
+  if (option.reachable) {
+    return "mini-pill--success";
+  }
+  return "mini-pill--warning";
+};
+
 const phaseStatusText = (status?: string | null) => {
   if (status === "active") {
     return "进行中";
@@ -900,17 +1186,20 @@ const formatActionCategory = (category?: string | null) => {
   if (category === "safety") {
     return "安全";
   }
-  if (category === "flow") {
-    return "动线";
+  if (category === "layout") {
+    return "场布";
   }
-  if (category === "storage") {
-    return "堆场";
+  if (category === "access") {
+    return "通道";
   }
-  if (category === "crane") {
-    return "塔吊";
+  if (category === "logistics") {
+    return "物流";
   }
-  if (category === "zone") {
-    return "目标区";
+  if (category === "equipment") {
+    return "设备";
+  }
+  if (category === "phase") {
+    return "阶段";
   }
   if (!category) {
     return "系统建议";
@@ -974,6 +1263,63 @@ const reportToneClass = computed(() => {
   return currentResult.value.metrics.feasible_layout ? "status-pill--success" : "status-pill--warning";
 });
 
+const bimDataStatusLabel = computed(() => {
+  if (bimDataStatus.value.state === "live") {
+    return "实时快照已加载";
+  }
+  if (bimDataStatus.value.state === "demo") {
+    return "同步失败，正在用 demo 数据";
+  }
+  if (bimDataStatus.value.state === "offline") {
+    return "后端未连接";
+  }
+  return "正在同步实时快照";
+});
+
+const bimDataStatusBadge = computed(() => {
+  if (bimDataStatus.value.state === "live") {
+    return "LIVE";
+  }
+  if (bimDataStatus.value.state === "demo") {
+    return "DEMO";
+  }
+  if (bimDataStatus.value.state === "offline") {
+    return "OFFLINE";
+  }
+  return "SYNC";
+});
+
+const bimDataStatusToneClass = computed(() => {
+  if (bimDataStatus.value.state === "live") {
+    return "status-pill--success";
+  }
+  if (bimDataStatus.value.state === "demo") {
+    return "status-pill--warning";
+  }
+  if (bimDataStatus.value.state === "offline") {
+    return "status-pill--danger";
+  }
+  return "status-pill--running";
+});
+
+const bimDataStatusMeta = computed(() => {
+  if (bimDataStatus.value.state === "live") {
+    const timestamp = bimDataStatus.value.snapshot_updated_at ?? bimDataStatus.value.last_sync_success_at;
+    return timestamp ? `最近快照 ${formatTimestamp(timestamp)}` : "来源：实时 BIM 快照";
+  }
+  if (bimDataStatus.value.state === "demo") {
+    return bimDataStatus.value.last_sync_attempt_at
+      ? `最近尝试 ${formatTimestamp(bimDataStatus.value.last_sync_attempt_at)}`
+      : "来源：本地 demo 场景";
+  }
+  if (bimDataStatus.value.state === "offline") {
+    return bimDataStatus.value.last_sync_success_at
+      ? `最近成功 ${formatTimestamp(bimDataStatus.value.last_sync_success_at)}`
+      : "来源：本地 demo 场景";
+  }
+  return "启动链路正在同步 BIMFACE 快照";
+});
+
 const phaseStatusToneClass = computed(() =>
   activePhase.value?.status === "active" ? "status-pill--running" : "status-pill--idle",
 );
@@ -986,32 +1332,11 @@ const placementRate = computed(() => {
 });
 
 const placementLabel = computed(() => {
-  if (!selectedPlacement.value) {
-    return "待分析";
-  }
-  if (selectedPlacement.value.status === "placed") {
-    return "已落位";
-  }
-  if (selectedPlacement.value.status === "unreachable") {
-    return "不可达";
-  }
-  if (selectedPlacement.value.status === "violated") {
-    return "有冲突";
-  }
-  return "需关注";
+  return placementStatusText(selectedPlacement.value);
 });
 
 const placementToneClass = computed(() => {
-  if (!selectedPlacement.value) {
-    return "status-pill--idle";
-  }
-  if (selectedPlacement.value.status === "placed") {
-    return "status-pill--success";
-  }
-  if (selectedPlacement.value.status === "unreachable" || selectedPlacement.value.status === "violated") {
-    return "status-pill--warning";
-  }
-  return "status-pill--idle";
+  return placementStatusTone(selectedPlacement.value);
 });
 
 const assignableZones = computed(() =>
@@ -1021,6 +1346,24 @@ const assignableZones = computed(() =>
 const phaseVersions = computed(() =>
   recentPlanVersions.value.filter((version) => version.phase_id === activePhaseId.value),
 );
+
+const reviewPlacementList = computed(() =>
+  currentResult.value
+    ? [...currentResult.value.placements].sort((left, right) => {
+        const riskGap = placementRiskScore(right) - placementRiskScore(left);
+        if (riskGap !== 0) {
+          return riskGap;
+        }
+        return left.material_name.localeCompare(right.material_name, "zh-CN");
+      })
+    : [],
+);
+
+const keyAlertCounts = computed(() => ({
+  pathCrossesObstacle: reviewPlacementList.value.filter((placement) => hasPlacementAlert(placement, "path_crosses_obstacle")).length,
+  threeDCollision: reviewPlacementList.value.filter((placement) => hasPlacementAlert(placement, "three_d_collision")).length,
+  overCraneRadius: reviewPlacementList.value.filter((placement) => hasPlacementAlert(placement, "over_crane_radius")).length,
+}));
 
 const phaseSequenceMap = computed(
   () => new Map(phases.value.map((phase) => [phase.id, phase.sequence])),
@@ -1295,8 +1638,30 @@ const focusMaterial = (materialId: string, phaseId?: string | null) => {
   allMaterialsDialogOpen.value = false;
 };
 
+const focusPlacement = (placement: PlacementResult) => {
+  selectedMaterialId.value = placement.material_id;
+  rightPanelOpen.value = true;
+};
+
 const handlePhaseChange = (phaseId: string) => {
   layoutStore.setActivePhase(phaseId);
+};
+
+const handleRetrySnapshot = async () => {
+  const state = await layoutStore.loadProjectSnapshot();
+  if (state === "live") {
+    ElMessage.success("实时 BIM 快照已重新加载。");
+    return;
+  }
+  if (state === "demo") {
+    ElMessage.warning("未拉到实时快照，当前继续使用 demo 数据。");
+    return;
+  }
+  if (state === "offline") {
+    ElMessage.error("后端未连接，无法加载 BIM 快照。");
+    return;
+  }
+  ElMessage.info("实时 BIM 快照仍在同步中。");
 };
 
 const openMaterialImport = () => {
@@ -1483,6 +1848,57 @@ onMounted(() => {
   line-height: 1.5;
 }
 
+.toolbar-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.toolbar-bim-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: min(100%, 560px);
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.toolbar-bim-status__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.toolbar-bim-status__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toolbar-bim-status__label,
+.toolbar-bim-status__copy small {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.toolbar-bim-status__copy strong {
+  color: var(--app-text-primary);
+  font-size: 14px;
+}
+
+.toolbar-bim-status__pill {
+  width: auto;
+  min-width: 72px;
+  min-height: 24px;
+  padding-inline: 10px;
+  font-size: 11px;
+}
+
+.toolbar-bim-status__button.el-button {
+  flex: 0 0 auto;
+}
+
 .toolbar-stats {
   display: flex;
   flex-wrap: wrap;
@@ -1579,6 +1995,11 @@ onMounted(() => {
 .status-pill--warning {
   background: rgba(245, 158, 11, 0.14);
   color: #fde68a;
+}
+
+.status-pill--danger {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
 }
 
 .workspace-grid {
@@ -1736,6 +2157,126 @@ onMounted(() => {
 .sidebar-action-grid {
   display: grid;
   gap: 10px;
+}
+
+.review-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-highlight-grid--dialog {
+  margin-top: 14px;
+}
+
+.review-highlight-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.review-highlight-card span,
+.review-placement-card__meta,
+.review-placement-card__copy small {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.review-highlight-card strong,
+.review-placement-card__copy strong {
+  color: var(--app-text-primary);
+}
+
+.review-list-section {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.review-list-section__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.review-list {
+  display: grid;
+  gap: 10px;
+  max-height: 460px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.review-placement-card {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(146, 181, 205, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-placement-card:hover,
+.review-placement-card--active {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.review-placement-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-placement-card__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.review-placement-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.review-placement-card__detail {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.review-alert-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-alert-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.review-alert-chip--danger {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
+.review-alert-chip--warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fde68a;
 }
 
 .material-action-button,
@@ -2414,6 +2955,11 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
+  .toolbar-actions {
+    width: 100%;
+    min-width: 0;
+  }
+
   .workspace-grid {
     grid-template-columns: 320px minmax(0, 1fr);
   }
@@ -2447,7 +2993,8 @@ onMounted(() => {
 
   .material-chip-grid,
   .version-list,
-  .action-list {
+  .action-list,
+  .review-list {
     max-height: none;
   }
 
@@ -2466,11 +3013,17 @@ onMounted(() => {
     padding: 12px;
   }
 
+  .toolbar-bim-status {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .summary-grid,
   .decision-overview,
   .field-grid,
   .material-summary-grid,
-  .canvas-stage-plan__metrics {
+  .canvas-stage-plan__metrics,
+  .review-highlight-grid {
     grid-template-columns: 1fr;
   }
 

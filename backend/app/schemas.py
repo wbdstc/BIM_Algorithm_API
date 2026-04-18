@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -126,10 +128,30 @@ class PlanVersionSummary(BaseModel):
     created_at: str
 
 
+class BimDataStatus(BaseModel):
+    state: Literal["syncing", "live", "demo"] = "demo"
+    source: Literal["realtime_snapshot", "demo_data", "unknown"] = "demo_data"
+    message: str = "未加载实时 BIM 快照，当前使用 demo 数据"
+    detail: str | None = None
+    last_sync_error: str | None = None
+    last_sync_attempt_at: str | None = None
+    last_sync_success_at: str | None = None
+    snapshot_updated_at: str | None = None
+
+
+class BimDataStatusUpdateRequest(BaseModel):
+    state: Literal["syncing", "live", "demo"]
+    source: Literal["realtime_snapshot", "demo_data", "unknown"] = "unknown"
+    message: str
+    detail: str | None = None
+    last_sync_error: str | None = None
+
+
 class ProjectSnapshotResponse(ProjectSnapshotRequest):
     project_id: str
     latest_total_cost: float | None = None
     recent_plan_versions: list[PlanVersionSummary] = Field(default_factory=list)
+    bim_data_status: BimDataStatus = Field(default_factory=BimDataStatus)
 
 
 class OptimizeProjectRequest(ProjectSnapshotRequest):
@@ -147,9 +169,11 @@ class CraneOption(BaseModel):
     crane_name: str
     reachable: bool
     reason: str
+    reason_code: str = "reachable"
     distance: float | None = None
     estimated_cost: float | None = None
     path_crosses_obstacle: bool = False
+    travel_height: float | None = None
 
 
 class DecisionFactor(BaseModel):
@@ -162,6 +186,13 @@ class ActionItem(BaseModel):
     id: str
     category: str
     severity: str
+    title: str
+    detail: str
+
+
+class PlacementAlert(BaseModel):
+    code: str
+    level: str = "warning"
     title: str
     detail: str
 
@@ -191,6 +222,8 @@ class PlacementResult(BaseModel):
     decision_factors: list[DecisionFactor] = Field(default_factory=list)
     crane_options: list[CraneOption] = Field(default_factory=list)
     path_crosses_obstacle: bool = False
+    travel_height: float | None = None
+    review_alerts: list[PlacementAlert] = Field(default_factory=list)
     status: str
 
 

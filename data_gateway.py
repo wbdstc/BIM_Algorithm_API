@@ -15,7 +15,7 @@ ROLE_MAP_IDS = {
     "center_crane": {
         "id": "5327272_5311976",
         "name": "QTZ60-1",
-        "max_radius": 7500,
+        "max_radius": 3200,
         "capacity_tons": 18,
         "priority_score": 1.0,
     },
@@ -23,14 +23,14 @@ ROLE_MAP_IDS = {
         {
             "id": "5327272_5312858",
             "name": "QTZ60-2",
-            "max_radius": 7500,
+            "max_radius": 2800,
             "capacity_tons": 16,
             "priority_score": 0.96,
         },
         {
             "id": "5327272_5312036",
             "name": "QTZ60-3",
-            "max_radius": 7500,
+            "max_radius": 2800,
             "capacity_tons": 16,
             "priority_score": 0.94,
         },
@@ -405,27 +405,30 @@ if __name__ == "__main__":
         )
 
     for group_key, config in ROLE_MAP_IDS["buildings"].items():
-        group_metrics = [metrics for element_id in config["ids"] if (metrics := fetch_metrics(token, element_id))]
+        group_metrics = []
+        for index, element_id in enumerate(config["ids"], start=1):
+            metrics = fetch_metrics(token, element_id)
+            if not metrics:
+                continue
+
+            group_metrics.append(metrics)
+            payload_for_ga["obstacles"].append(
+                create_relative_obstacle(
+                    metrics,
+                    origin_x,
+                    origin_y,
+                    obstacle_id=element_id,
+                    name=f"{config['name']} Part {index}",
+                    kind="building",
+                    group_key=group_key,
+                )
+            )
+
         group_envelope = envelope_from_metrics(group_metrics, origin_x, origin_y)
         if not group_envelope:
             continue
 
         payload_for_ga["scene_guides"]["building_envelopes"][group_key] = group_envelope
-        payload_for_ga["obstacles"].append(
-            {
-                "id": group_key,
-                "name": config["name"],
-                "kind": "building",
-                "group_key": group_key,
-                "x": (group_envelope["min_x"] + group_envelope["max_x"]) / 2,
-                "y": (group_envelope["min_y"] + group_envelope["max_y"]) / 2,
-                "length": group_envelope["max_x"] - group_envelope["min_x"],
-                "width": group_envelope["max_y"] - group_envelope["min_y"],
-                "min_z": group_envelope["min_z"],
-                "max_z": group_envelope["max_z"],
-                "height": group_envelope["height"],
-            }
-        )
 
     for index, element_id in enumerate(ROLE_MAP_IDS["road_segments"], start=1):
         metrics = fetch_metrics(token, element_id)

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 
 import type {
+  BimDataStatusModel,
   ControlZoneModel,
   CraneModel,
   EnvelopeGuide,
@@ -15,6 +16,8 @@ import type {
 } from "../types/layout";
 
 const colorPalette = ["#38BDF8", "#14B8A6", "#F59E0B", "#10B981", "#F97316", "#EF4444"];
+const defaultProjectId = "demo-smart-site";
+const defaultProjectName = "BIM Smart Site Demo";
 
 const roadOffset = 15;
 const roadThickness = 1.8;
@@ -49,6 +52,23 @@ const building3Envelope: EnvelopeGuide = {
   max_z: 18,
   height: 18,
 };
+
+const buildingComponentIds = {
+  building_1: [
+    "5327272_5311496",
+    "5327272_5311502",
+    "5327272_5311484",
+    "5327272_5311490",
+  ],
+  building_2: [
+    "5327272_5311535",
+    "5327272_5311529",
+    "5327272_5311517",
+    "5327272_5311523",
+    "5327272_5311910",
+  ],
+  building_3: ["5327272_5314766", "5327272_5314769"],
+} as const;
 
 const wallEnvelope: EnvelopeGuide = {
   min_x: -18,
@@ -160,6 +180,43 @@ const createEnvelopeObstacle = (
   height: envelope.height ?? null,
   group_key: groupKey ?? null,
 });
+
+const createTiledEnvelopeObstacles = (
+  ids: readonly string[],
+  name: string,
+  groupKey: string,
+  envelope: EnvelopeGuide,
+  columns: number,
+  rows: number,
+): ObstacleModel[] => {
+  const tileLength = (envelope.max_x - envelope.min_x) / columns;
+  const tileWidth = (envelope.max_y - envelope.min_y) / rows;
+
+  return ids.map((id, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const min_x = envelope.min_x + (tileLength * column);
+    const max_x = min_x + tileLength;
+    const min_y = envelope.min_y + (tileWidth * row);
+    const max_y = min_y + tileWidth;
+
+    return createEnvelopeObstacle(
+      id,
+      `${name} Part ${index + 1}`,
+      "building",
+      {
+        min_x,
+        max_x,
+        min_y,
+        max_y,
+        min_z: envelope.min_z ?? null,
+        max_z: envelope.max_z ?? null,
+        height: envelope.height ?? null,
+      },
+      groupKey,
+    );
+  });
+};
 
 const createRingRoadObstacles = (
   anchorEnvelope: EnvelopeGuide,
@@ -273,9 +330,30 @@ const createWallObstacles = (envelope: EnvelopeGuide, thickness: number): Obstac
 ];
 
 const defaultObstacles: ObstacleModel[] = [
-  createEnvelopeObstacle("building-1", "Main Building 1", "building", building1Envelope, "building_1"),
-  createEnvelopeObstacle("building-2", "Main Building 2", "building", building2Envelope, "building_2"),
-  createEnvelopeObstacle("building-3", "Main Building 3", "building", building3Envelope, "building_3"),
+  ...createTiledEnvelopeObstacles(
+    buildingComponentIds.building_1,
+    "Main Building 1",
+    "building_1",
+    building1Envelope,
+    2,
+    2,
+  ),
+  ...createTiledEnvelopeObstacles(
+    buildingComponentIds.building_2,
+    "Main Building 2",
+    "building_2",
+    building2Envelope,
+    5,
+    1,
+  ),
+  ...createTiledEnvelopeObstacles(
+    buildingComponentIds.building_3,
+    "Main Building 3",
+    "building_3",
+    building3Envelope,
+    1,
+    2,
+  ),
   ...createRingRoadObstacles(building1Envelope, roadOffset, roadThickness),
   ...createWallObstacles(wallEnvelope, wallThickness),
 ];
@@ -436,6 +514,14 @@ const createMaterialFromSnapshot = (
   display_color: colorPalette[index % colorPalette.length],
 });
 
+const cloneSiteBoundary = (boundary: SiteBoundary): SiteBoundary => ({ ...boundary });
+
+const cloneSceneGuides = (sceneGuides: SceneGuides | null): SceneGuides | null =>
+  sceneGuides ? structuredClone(sceneGuides) : null;
+
+const createDemoMaterials = () =>
+  layoutSnapshot.map((item, index) => createMaterialFromSnapshot(item, index));
+
 const normalizeMaterials = (materials: MaterialModel[]): MaterialModel[] =>
   materials.map((material, index) => ({
     ...material,
@@ -487,21 +573,50 @@ const mergeRecentVersions = (
   return deduped.slice(0, 6);
 };
 
+const createDemoSceneState = () => ({
+  currentProjectId: defaultProjectId,
+  projectName: defaultProjectName,
+  siteBoundary: cloneSiteBoundary(realSiteBoundary),
+  sceneGuides: cloneSceneGuides(defaultSceneGuides),
+  phases: clonePhases(defaultPhases),
+  activePhaseId: defaultPhases[0].id,
+  controlZones: cloneZones(defaultControlZones),
+  workingCranes: cloneCranes(defaultCranes),
+  obstacles: cloneObstacles(defaultObstacles),
+  materials: createDemoMaterials(),
+  recentPlanVersions: [] as PlanVersionSummary[],
+});
+
+const createDemoBimDataStatus = (detail?: string | null): BimDataStatusModel => ({
+  state: "demo",
+  source: "demo_data",
+  message: "未加载实时 BIM 快照，当前使用 demo 数据",
+  detail: detail ?? "前端已回退到本地 demo 场景。",
+  last_sync_error: null,
+  last_sync_attempt_at: null,
+  last_sync_success_at: null,
+  snapshot_updated_at: null,
+});
+
+const createOfflineBimDataStatus = (detail: string): BimDataStatusModel => ({
+  state: "offline",
+  source: "unknown",
+  message: "后端未连接",
+  detail,
+  last_sync_error: detail,
+  last_sync_attempt_at: null,
+  last_sync_success_at: null,
+  snapshot_updated_at: null,
+});
+
 export const useLayoutStore = defineStore("layout", {
   state: () => ({
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1",
-    currentProjectId: "demo-smart-site",
-    projectName: "BIM Smart Site Demo",
-    siteBoundary: realSiteBoundary,
-    sceneGuides: defaultSceneGuides as SceneGuides | null,
-    phases: clonePhases(defaultPhases),
-    activePhaseId: defaultPhases[0].id,
-    controlZones: cloneZones(defaultControlZones),
-    workingCranes: cloneCranes(defaultCranes),
-    obstacles: cloneObstacles(defaultObstacles),
-    materials: layoutSnapshot.map((item, index) => createMaterialFromSnapshot(item, index)),
+    ...createDemoSceneState(),
     optimizationResult: null as OptimizationResult | null,
-    recentPlanVersions: [] as PlanVersionSummary[],
+    bimDataStatus: createDemoBimDataStatus(),
+    snapshotLoading: false,
+    hasLoadedRealtimeSnapshot: false,
     loading: false,
     error: "",
   }),
@@ -523,8 +638,8 @@ export const useLayoutStore = defineStore("layout", {
     applyProjectSnapshot(snapshot: ProjectSnapshotModel) {
       this.currentProjectId = snapshot.project_id;
       this.projectName = snapshot.name;
-      this.siteBoundary = { ...snapshot.site_boundary };
-      this.sceneGuides = snapshot.scene_guides ?? defaultSceneGuides;
+      this.siteBoundary = cloneSiteBoundary(snapshot.site_boundary);
+      this.sceneGuides = cloneSceneGuides(snapshot.scene_guides ?? defaultSceneGuides);
       this.phases = snapshot.phases.length ? clonePhases(snapshot.phases) : clonePhases(defaultPhases);
       this.activePhaseId = snapshot.active_phase_id ?? this.phases[0]?.id ?? null;
       this.controlZones = snapshot.control_zones.length
@@ -540,9 +655,31 @@ export const useLayoutStore = defineStore("layout", {
         this.materials = normalizeMaterials(snapshot.materials);
       }
       this.recentPlanVersions = [...snapshot.recent_plan_versions];
+      this.bimDataStatus = { ...snapshot.bim_data_status };
+      this.hasLoadedRealtimeSnapshot = snapshot.bim_data_status.state === "live";
       if (this.optimizationResult && this.optimizationResult.phase_id !== this.activePhaseId) {
         this.optimizationResult = null;
       }
+    },
+    resetToDemoScene() {
+      const demoScene = createDemoSceneState();
+      this.currentProjectId = demoScene.currentProjectId;
+      this.projectName = demoScene.projectName;
+      this.siteBoundary = demoScene.siteBoundary;
+      this.sceneGuides = demoScene.sceneGuides;
+      this.phases = demoScene.phases;
+      this.activePhaseId = demoScene.activePhaseId;
+      this.controlZones = demoScene.controlZones;
+      this.workingCranes = demoScene.workingCranes;
+      this.obstacles = demoScene.obstacles;
+      this.materials = demoScene.materials;
+      this.recentPlanVersions = demoScene.recentPlanVersions;
+      this.optimizationResult = null;
+      this.hasLoadedRealtimeSnapshot = false;
+      this.error = "";
+    },
+    setBimDataStatus(status: BimDataStatusModel) {
+      this.bimDataStatus = { ...status };
     },
     setActivePhase(phaseId: string) {
       this.activePhaseId = phaseId;
@@ -551,15 +688,60 @@ export const useLayoutStore = defineStore("layout", {
       }
     },
     async loadProjectSnapshot() {
+      const hadRealtimeSnapshot = this.hasLoadedRealtimeSnapshot;
+      const projectId = this.currentProjectId || defaultProjectId;
+      const statusUrl = `${this.apiBaseUrl}/projects/${projectId}/bim-data-status`;
+      const projectUrl = `${this.apiBaseUrl}/projects/${projectId}`;
+
+      this.snapshotLoading = true;
       try {
-        const response = await fetch(`${this.apiBaseUrl}/projects/${this.currentProjectId}`);
-        if (response.status === 404 || !response.ok) {
-          return;
+        const statusResponse = await fetch(statusUrl);
+        if (!statusResponse.ok) {
+          const message = await statusResponse.text();
+          throw new Error(message || "Failed to load BIM snapshot status.");
+        }
+
+        const status = (await statusResponse.json()) as BimDataStatusModel;
+        this.setBimDataStatus(status);
+
+        if (status.state !== "live") {
+          this.resetToDemoScene();
+          this.setBimDataStatus(status);
+          return status.state;
+        }
+
+        const response = await fetch(projectUrl);
+        if (response.status === 404) {
+          this.resetToDemoScene();
+          this.setBimDataStatus(
+            createDemoBimDataStatus("后端状态显示实时快照可用，但项目快照不存在，已回退到 demo 场景。"),
+          );
+          return "demo";
+        }
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to load BIM project snapshot.");
         }
 
         this.applyProjectSnapshot((await response.json()) as ProjectSnapshotModel);
-      } catch {
-        // Keep the local planning scene when the backend snapshot is unavailable.
+        return this.bimDataStatus.state;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "无法连接 FastAPI 后端。";
+        const previousStatus = { ...this.bimDataStatus };
+        if (!hadRealtimeSnapshot) {
+          this.resetToDemoScene();
+        }
+        const offlineStatus = createOfflineBimDataStatus(
+          hadRealtimeSnapshot
+            ? `无法连接 FastAPI 后端，当前保留最近一次已加载的快照。${detail ? ` ${detail}` : ""}`
+            : `无法连接 FastAPI 后端，当前继续使用 demo 数据。${detail ? ` ${detail}` : ""}`,
+        );
+        offlineStatus.last_sync_success_at = previousStatus.last_sync_success_at ?? null;
+        offlineStatus.snapshot_updated_at = previousStatus.snapshot_updated_at ?? null;
+        this.setBimDataStatus(offlineStatus);
+        return "offline";
+      } finally {
+        this.snapshotLoading = false;
       }
     },
     addMaterial() {

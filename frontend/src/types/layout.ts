@@ -102,15 +102,24 @@ export interface CraneOption {
   crane_name: string;
   reachable: boolean;
   reason: string;
+  reason_code: string;
   distance?: number | null;
   estimated_cost?: number | null;
   path_crosses_obstacle: boolean;
+  travel_height?: number | null;
 }
 
 export interface DecisionFactor {
   label: string;
   value: string;
   tone: string;
+}
+
+export interface PlacementAlert {
+  code: string;
+  level: string;
+  title: string;
+  detail: string;
 }
 
 export interface ActionItem {
@@ -146,6 +155,8 @@ export interface PlacementResult {
   decision_factors: DecisionFactor[];
   crane_options: CraneOption[];
   path_crosses_obstacle: boolean;
+  travel_height?: number | null;
+  review_alerts: PlacementAlert[];
   status: string;
 }
 
@@ -159,6 +170,19 @@ export interface PlanVersionSummary {
   placed_count: number;
   unplaced_count: number;
   created_at: string;
+}
+
+export type BimDataStatusState = "syncing" | "live" | "demo" | "offline";
+
+export interface BimDataStatusModel {
+  state: BimDataStatusState;
+  source: "realtime_snapshot" | "demo_data" | "unknown";
+  message: string;
+  detail?: string | null;
+  last_sync_error?: string | null;
+  last_sync_attempt_at?: string | null;
+  last_sync_success_at?: string | null;
+  snapshot_updated_at?: string | null;
 }
 
 export interface OptimizationMetrics {
@@ -202,4 +226,5 @@ export interface ProjectSnapshotModel {
   scene_guides?: SceneGuides | null;
   latest_total_cost?: number | null;
   recent_plan_versions: PlanVersionSummary[];
+  bim_data_status: BimDataStatusModel;
 }
