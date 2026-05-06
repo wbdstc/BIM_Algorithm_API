@@ -226,5 +226,6 @@ export interface ProjectSnapshotModel {
   scene_guides?: SceneGuides | null;
   latest_total_cost?: number | null;
   recent_plan_versions: PlanVersionSummary[];
+  latest_optimization_result?: OptimizationResult | null;
   bim_data_status: BimDataStatusModel;
 }

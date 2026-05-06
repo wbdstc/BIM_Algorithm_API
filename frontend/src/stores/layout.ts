@@ -655,8 +655,10 @@ export const useLayoutStore = defineStore("layout", {
         this.materials = normalizeMaterials(snapshot.materials);
       }
       this.recentPlanVersions = [...snapshot.recent_plan_versions];
+      this.optimizationResult = snapshot.latest_optimization_result ?? null;
       this.bimDataStatus = { ...snapshot.bim_data_status };
-      this.hasLoadedRealtimeSnapshot = snapshot.bim_data_status.state === "live";
+      this.hasLoadedRealtimeSnapshot = snapshot.bim_data_status.state === "live"
+        || snapshot.bim_data_status.state === "syncing";
       if (this.optimizationResult && this.optimizationResult.phase_id !== this.activePhaseId) {
         this.optimizationResult = null;
       }
@@ -704,7 +706,10 @@ export const useLayoutStore = defineStore("layout", {
         const status = (await statusResponse.json()) as BimDataStatusModel;
         this.setBimDataStatus(status);
 
-        if (status.state !== "live") {
+        const canUseRealtimeSnapshot = status.state === "live"
+          || (status.state === "syncing" && Boolean(status.snapshot_updated_at || status.last_sync_success_at));
+
+        if (!canUseRealtimeSnapshot) {
           this.resetToDemoScene();
           this.setBimDataStatus(status);
           return status.state;

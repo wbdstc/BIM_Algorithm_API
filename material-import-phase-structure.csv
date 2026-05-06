@@ -1,0 +1,9 @@
+name,category,length,width,height,weight_tons,handling_frequency,stay_days,priority_score,batch_id,target_zone_id,phase_id,notes,display_color
+钢筋原材堆场,rebar,12,3,1.2,6.5,3,5,1.4,RB-01,zone-north-staging,phase-structure,靠近北侧钢筋暂存区并保持塔吊主覆盖,#38BDF8
+箍筋半成品区,rebar,8,2.5,1.1,4.2,3,4,1.3,RB-02,zone-north-staging,phase-structure,与钢筋加工动线一致减少二次搬运,#0EA5E9
+模板周转主堆场,formwork,8,4,2.4,3.2,2,4,1.1,FW-01,zone-west-buffer,phase-structure,避开南侧卸料通道并便于周转,#14B8A6
+木方及背楞区,formwork,6,3,2.2,2.1,2,4,1.0,FW-02,zone-west-buffer,phase-structure,与模板堆场配套布置,#2DD4BF
+钢管脚手架区,scaffold,9,3,2.8,5.8,2,6,1.2,SC-01,zone-west-buffer,phase-structure,注意与主体边线保持安全距离,#22C55E
+扣件及小型周转件区,misc,4,2,1.5,1.2,4,3,1.0,AC-01,zone-west-buffer,phase-structure,适合小批量高频取用,#84CC16
+机具箱及支撑件区,equipment,5,2.5,1.8,2.4,3,3,1.1,EQ-01,zone-north-staging,phase-structure,兼顾塔吊覆盖与人工短驳,#F59E0B
+预埋件周转区,steel,4.5,2.5,1.6,2.8,4,2,1.5,EM-01,zone-north-staging,phase-structure,高频吊运物料优先布置在主覆盖区,#FB7185

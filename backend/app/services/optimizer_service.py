@@ -189,6 +189,11 @@ class LayoutOptimizerService:
                 self._serialize_plan_version_summary(version, phase_name_map)
                 for version in recent_plan_versions
             ],
+            latest_optimization_result=(
+                recent_plan_versions[0].response_payload
+                if recent_plan_versions
+                else None
+            ),
             bim_data_status=self.serialize_bim_data_status(db, project.id, project=project),
         )
         return normalize_snapshot_payload(snapshot)

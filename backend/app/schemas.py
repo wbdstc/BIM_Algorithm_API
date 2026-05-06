@@ -151,6 +151,7 @@ class ProjectSnapshotResponse(ProjectSnapshotRequest):
     project_id: str
     latest_total_cost: float | None = None
     recent_plan_versions: list[PlanVersionSummary] = Field(default_factory=list)
+    latest_optimization_result: dict | None = None
     bim_data_status: BimDataStatus = Field(default_factory=BimDataStatus)
 
 

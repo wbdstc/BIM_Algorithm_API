@@ -38,6 +38,15 @@ if not exist "%VENV_PY%" (
     )
 )
 
+echo [Backend] Validating virtual environment...
+"%VENV_PY%" -c "import sys; print(sys.executable)" >nul 2>nul
+if errorlevel 1 (
+    echo [Backend] The virtual environment exists, but its base Python runtime is missing.
+    echo [Backend] Expected Python 3.11 home: C:\Users\20909\AppData\Local\Programs\Python\Python311
+    echo [Backend] Reinstall Python 3.11 to that path or recreate backend\.venv with a valid Python 3.11 interpreter.
+    goto :wait_exit
+)
+
 echo [Backend] Checking dependencies...
 "%VENV_PY%" -c "import fastapi, uvicorn, sqlalchemy, pydantic" >nul 2>nul
 if errorlevel 1 (

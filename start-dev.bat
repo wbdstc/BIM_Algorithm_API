@@ -25,15 +25,11 @@ echo.
 
 timeout /t 2 >nul
 
-echo 2. Syncing BIM data to backend...
+echo 2. BIM sync is skipped by default...
+echo    Auto-sync has been disabled to avoid overwriting the local project snapshot.
 if exist "%SYNC_SCRIPT%" (
-    powershell.exe -ExecutionPolicy Bypass -File "%SYNC_SCRIPT%"
-    if errorlevel 1 (
-        echo    [WARN] BIM data sync failed or was skipped.
-        echo    [WARN] Frontend may show stale/demo data until sync succeeds.
-    ) else (
-        echo    BIM data synced to FastAPI project snapshot.
-    )
+    echo    Manual sync command:
+    echo    powershell.exe -ExecutionPolicy Bypass -File "%SYNC_SCRIPT%"
 ) else (
     echo    [WARN] scripts\sync-bim-data.ps1 not found.
 )
